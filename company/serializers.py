@@ -8,25 +8,25 @@ class OwnerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Owner
-        fields = ['id', 'username', 'email', 'phone_no', 'type_of_company']
+        fields = '__all__'
 class CompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
-        fields = ['id', 'owner', 'company_name', 'phone_no', 'gst', 'address', 'type_of_company']
+        fields = '__all__'
 
 
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
-        fields = ['id', 'company', 'client_name', 'address', 'gst', 'phone_no']
+        fields = '__all__'
 
 class ItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Item
-        fields = ['id', 'company', 'item_name', 'item_code', 'quantity', 'unit', 'description', 'tax_type', 'tax', 'price', 'selling_price']
+        fields = '__all__'
 
 class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
-        fields = ['id', 'company', 'client', 'item', 'invoice_number', 'invoice_date', 'quantity', 'rate', 'line_total', 'price_per_unit', 'total_price']
-        read_only_fields = ['id']
+        fields = '__all__'
+        read_only_fields = 'id'

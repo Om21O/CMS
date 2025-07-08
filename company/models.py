@@ -4,29 +4,36 @@ from django.contrib.auth.models import User
 # Create your models here.
 
 class Owner(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.DO_NOTHING, related_name="owner_profile")
     phone_no = models.CharField(max_length=15)
     type_of_company = models.CharField(max_length=10, choices=[('basic', 'Basic'), ('premium', 'Premium')])
+    deleted = models.BooleanField(default=False)
 
     def __str__(self):
-        return self.user.username
+        return f"{self.user.username} - {self.type_of_company}"
+
+    
 
 class Company(models.Model):
     id = models.AutoField(primary_key=True)
-    owner = models.ForeignKey(Owner, on_delete=models.CASCADE, related_name="companies")
+    owner = models.ForeignKey(Owner, on_delete=models.DO_NOTHING, related_name="companies")
     company_name = models.CharField(max_length=255)
     phone_no = models.CharField(max_length=15)
     gst = models.CharField(max_length=15)
     address = models.TextField()
     type_of_company = models.CharField(max_length=50, null=True, blank=True)
+    deleted = models.BooleanField(default=False)
+
 
 class Client(models.Model):
     id = models.AutoField(primary_key=True)
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="clients")
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="clients")
     client_name = models.CharField(max_length=255)
     address = models.TextField()
     gst = models.CharField(max_length=15, null=True, blank=True)
     phone_no = models.CharField(max_length=15)
+    deleted = models.BooleanField(default=False)
+
 
 
 class Item(models.Model):
@@ -43,7 +50,7 @@ class Item(models.Model):
         ('withouttax', 'Without Tax'),
     ]
 
-    company = models.ForeignKey(Company, on_delete=models.CASCADE)
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING)
     item_name = models.CharField(max_length=100)
     item_code = models.CharField(max_length=50, unique=True)
     quantity = models.FloatField()  # numeric value
@@ -70,11 +77,12 @@ class Item(models.Model):
         super().save(*args, **kwargs)
 
         
+#sales and pruchase invoice model
 
 class Invoice(models.Model):
-    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices')
-    client = models.ForeignKey('Client', on_delete=models.PROTECT, related_name='invoices')
-    item = models.ForeignKey('Item', on_delete=models.PROTECT, related_name='invoices')
+    company = models.ForeignKey('Company', on_delete=models.DO_NOTHING, related_name='invoices')
+    client = models.ForeignKey('Client', on_delete=models.DO_NOTHING, related_name='invoices')
+    item = models.ForeignKey('Item', on_delete=models.DO_NOTHING, related_name='invoices')
 
     invoice_number = models.CharField(max_length=100, unique=True)
     invoice_date = models.DateField(auto_now_add=True)
