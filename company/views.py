@@ -286,71 +286,56 @@ def round_decimal(value, digits=2):
 
 
 class CreateInvoiceView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         data = request.data
         company_id = data.get('company_id')
         client_id = data.get('client_id')
-        item_id = data.get('item_id')
-        quantity = data.get('quantity')
+        items = data.get('items')  # List of {"item_id": 1, "quantity": 2}
         invoice_number = data.get('invoice_number')
 
-        # Validate presence
-        if not all([company_id, client_id, item_id, quantity, invoice_number]):
-            return Response({"error": "All fields are required", "status": 400}, status=400)
+        if not all([company_id, client_id, items, invoice_number]):
+            return Response({"error": "All fields are required"}, status=400)
 
-        try:
-            company = get_object_or_404(Company, id=company_id)
-            client = get_object_or_404(Client, id=client_id, company=company)
-            item = get_object_or_404(Item, id=item_id, company=company)
+        company = get_object_or_404(Company, id=company_id)
+        client = get_object_or_404(Client, id=client_id)
 
-            quantity = float(quantity)
+        invoice = Invoice.objects.create(
+            company=company,
+            client=client,
+            invoice_number=invoice_number
+        )
+
+        total_price = 0
+
+        for item_data in items:
+            item = get_object_or_404(Item, id=item_data['item_id'], company=company)
+            quantity = float(item_data['quantity'])
 
             if item.quantity < quantity:
-                return Response({"error": "Insufficient stock", "status": 400}, status=400)
+                return Response({"error": f"Insufficient stock for {item.item_name}"}, status=400)
 
-            # Deduct stock
             item.quantity -= quantity
             item.save()
 
-            # Prices
-            rate = round_decimal(item.price)
-            selling_price = item.selling_price or rate
-            tax_percent = item.tax or 0
+            price_per_unit = item.selling_price
+            line_total = round(price_per_unit * quantity, 2)
 
-            if item.tax_type == 'withtax':
-                tax_amount = selling_price * (tax_percent / 100)
-                price_per_unit = selling_price + tax_amount
-            else:
-                price_per_unit = selling_price
-
-            price_per_unit = round_decimal(price_per_unit)
-            line_total = round_decimal(rate * quantity)
-            total_price = round_decimal(price_per_unit * quantity)
-
-            invoice = Invoice.objects.create(
-                company=company,
-                client=client,
+            InvoiceItem.objects.create(
+                invoice=invoice,
                 item=item,
                 quantity=quantity,
-                invoice_number=invoice_number,
-                invoice_date=timezone.now(),
-                rate=rate,
-                line_total=line_total,
                 price_per_unit=price_per_unit,
-                total_price=total_price
+                line_total=line_total
             )
 
-            serializer = InvoiceSerializer(invoice)
-            return Response({
-                "msg": "Invoice created successfully",
-                "invoice": serializer.data,
-                "status": 201
-            })
+            total_price += line_total
 
-        except Exception as e:
-            return Response({"error": str(e), "status": 500}, status=500)
+        invoice.total_price = total_price
+        invoice.save()
+
+        return Response({"msg": "Invoice created", "invoice_id": invoice.id, "total": total_price}, status=201)
 
 
 class UpdateOwnerView(APIView):
