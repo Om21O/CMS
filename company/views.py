@@ -376,14 +376,99 @@ class CreateSalesInvoiceView(APIView):
             return Response({"error": str(e)}, status=500)
 
 
+
 class CreatePurchaseInvoiceView(APIView):
     permission_classes = [AllowAny]
+
     def post(self, request):
-        serializer = PurchaseInvoiceSerializer(data=request.data)
-        if serializer.is_valid():
-            invoice = serializer.save()
-            return Response(PurchaseInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = request.data
+        company_id = data.get('company')
+        supplier_name = data.get('supplier_name')
+        invoice_number = data.get('invoice_number')
+        items = data.get('items', [])
+
+        if not all([company_id, supplier_name, invoice_number, items]):
+            return Response({"error": "All invoice fields and at least one item are required"}, status=400)
+
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Invalid company ID"}, status=404)
+
+        if PurchaseInvoice.objects.filter(invoice_number=invoice_number).exists():
+            return Response({"error": "Invoice number must be unique"}, status=400)
+
+        # Create the invoice
+        invoice = PurchaseInvoice.objects.create(
+            company=company,
+            supplier_name=supplier_name,
+            invoice_number=invoice_number,
+        )
+
+        total_price = 0
+
+        for item_data in items:
+            item_name = item_data.get('item_name')
+            unit_id = item_data.get('unit')
+            quantity = item_data.get('quantity')
+            cost_price = item_data.get('cost_price')
+
+            if not all([item_name, unit_id, quantity, cost_price]):
+                invoice.delete()
+                return Response({"error": "Each item must have item_name, unit, quantity, and cost_price"}, status=400)
+
+            try:
+                unit = Unit.objects.get(id=unit_id)
+            except Unit.DoesNotExist:
+                invoice.delete()
+                return Response({"error": f"Invalid unit ID for item {item_name}"}, status=404)
+
+            # Calculate line total
+            line_total = round(quantity * cost_price, 2)
+            total_price += line_total
+
+            # Handle item creation/update in Item table
+            existing_items = Item.objects.filter(item_name=item_name, company=company)
+            matched_item = None
+            for item in existing_items:
+                if round(item.price, 2) == round(cost_price, 2):
+                    matched_item = item
+                    break
+
+            if matched_item:
+                matched_item.quantity += quantity
+                matched_item.save()
+            else:
+                Item.objects.create(
+                    company=company,
+                    item_name=item_name,
+                    item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
+                    quantity=quantity,
+                    unit=unit,
+                    description="Auto-created from Purchase Invoice",
+                    tax_type=None,
+                    tax=None,
+                    price=cost_price,
+                    selling_price=round(cost_price * 1.1, 2)
+                )
+
+            PurchaseInvoiceItem.objects.create(
+                invoice=invoice,
+                item_name=item_name,
+                unit=unit,
+                quantity=quantity,
+                cost_price=cost_price,
+                line_total=line_total
+            )
+
+        invoice.total_price = round(total_price, 2)
+        invoice.save(update_fields=["total_price"])
+
+        return Response({
+            "msg": "Purchase invoice created successfully",
+            "invoice_id": invoice.id,
+            "total_price": invoice.total_price
+        }, status=201)
 
 class UpdateOwnerView(APIView):
     #permission_classes = [AllowAny]

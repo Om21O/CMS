@@ -62,7 +62,7 @@ class Item(models.Model):
     quantity = models.FloatField()
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT)         # replaced CharField with FK
     description = models.TextField()
-    tax_type = models.ForeignKey(TaxType, on_delete=models.PROTECT)  # replaced CharField with FK
+    tax_type = models.ForeignKey(TaxType, on_delete=models.PROTECT,null=True, blank=True)  # replaced CharField with FK
     tax = models.FloatField(blank=True, null=True)
     price = models.FloatField(help_text="Base price per unit")
     selling_price = models.FloatField(help_text="Selling price per unit", default=0.0, blank=True, null=True)
@@ -139,17 +139,8 @@ class PurchaseInvoice(models.Model):
     supplier_name = models.CharField(max_length=100)
     invoice_number = models.CharField(max_length=100, unique=True)
     invoice_date = models.DateField(auto_now_add=True)
-
     total_price = models.FloatField(default=0.0)
 
-    def calculate_subtotal(self):
-        return sum(item.line_total for item in self.items.all())
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)  # Initial save for access
-        subtotal = self.calculate_subtotal()
-        self.total_price = round(subtotal, 2)
-        super().save(update_fields=['total_price'])  # Only update price field
 
 class PurchaseInvoiceItem(models.Model):
     invoice = models.ForeignKey(PurchaseInvoice, related_name='items', on_delete=models.DO_NOTHING)
@@ -158,52 +149,3 @@ class PurchaseInvoiceItem(models.Model):
     quantity = models.FloatField()
     cost_price = models.FloatField(help_text="Unit purchase price (cost)")
     line_total = models.FloatField(blank=True, default=0.0)
-    def save(self, *args, **kwargs):
-        from .models import Item  # Avoid circular import if needed
-
-    # Check for existing items by name
-        existing_items = Item.objects.filter(item_name=self.item_name, company=self.invoice.company)
-
-        if existing_items.exists():
-            matched_item = None
-            for item in existing_items:
-                if round(item.price, 2) == round(self.cost_price, 2):
-                    matched_item = item
-                    break
-
-            if matched_item:
-                # Case 1: Same item name and same cost → increase quantity
-                matched_item.quantity += self.quantity
-                matched_item.save()
-            else:
-            # Case 2: Same name but different cost → create new item
-                Item.objects.create(
-                    company=self.invoice.company,
-                    item_name=self.item_name,
-                    item_code=f"{self.item_name[:3].upper()}_{Item.objects.count() + 1}",
-                    quantity=self.quantity,
-                    unit=self.unit,
-                    description="Auto-created from Purchase Invoice",
-                    tax_type=None,
-                    tax=None,
-                    price=self.cost_price,
-                    selling_price=self.cost_price * 1.1  # Default 10% markup
-                )
-        else:
-        # ✅ Case 3: Item name doesn't exist → create new item
-            Item.objects.create(
-                company=self.invoice.company,
-                item_name=self.item_name,
-                item_code=f"{self.item_name[:3].upper()}_{Item.objects.count() + 1}",
-                quantity=self.quantity,
-                unit=self.unit,
-                description="Auto-created from Purchase Invoice",
-                tax_type=None,
-                tax=None,
-                price=self.cost_price,
-                selling_price=self.cost_price * 1.1
-            )
-
-    # Calculate line total
-        self.line_total = round(self.quantity * self.cost_price, 2)
-        super().save(*args, **kwargs)

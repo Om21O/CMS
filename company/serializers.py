@@ -40,7 +40,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
 class PurchaseInvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseInvoiceItem
-        fields = ['item_name', 'unit', 'quantity', 'cost_price']
+        fields = '__all__'
 
 class PurchaseInvoiceSerializer(serializers.ModelSerializer):
     items = PurchaseInvoiceItemSerializer(many=True)
@@ -48,14 +48,3 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseInvoice
         fields = '__all__'
-
-    def create(self, validated_data):
-        items_data = validated_data.pop('items')
-        invoice = PurchaseInvoice.objects.create(**validated_data)
-        total = 0
-        for item_data in items_data:
-            item_instance = PurchaseInvoiceItem.objects.create(invoice=invoice, **item_data)
-            total += item_instance.line_total
-        invoice.total_price = round(total, 2)
-        invoice.save(update_fields=['total_price'])
-        return invoice
