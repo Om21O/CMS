@@ -90,22 +90,119 @@ class Item(models.Model):
         
 #sales and pruchase invoice model
 
-class Invoice(models.Model):
+class SalesInvoice(models.Model):
     company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name='invoices')
     client = models.ForeignKey(Client, on_delete=models.DO_NOTHING, related_name='invoices')
     invoice_number = models.CharField(max_length=100, unique=True)
     invoice_date = models.DateField(auto_now_add=True)
-    total_price = models.FloatField(default=0)
 
-class InvoiceItem(models.Model):
-    invoice = models.ForeignKey(Invoice, related_name='items', on_delete=models.DO_NOTHING)
+    final_discount_applicable = models.BooleanField(default=False)
+    final_discount = models.FloatField(default=0.0)  # percentage
+    total_price = models.FloatField(default=0.0)
+
+    def calculate_subtotal(self):
+        return sum(item.line_total for item in self.items.all())
+
+    def apply_final_discount(self, subtotal):
+        if self.final_discount_applicable and self.final_discount > 0:
+            return round(subtotal * (1 - self.final_discount / 100), 2)
+        return round(subtotal, 2)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)  # Save first to ensure items can be accessed
+        subtotal = self.calculate_subtotal()
+        self.total_price = self.apply_final_discount(subtotal)
+        super().save(update_fields=['total_price'])  # Save updated price only
+
+
+class SalesInvoiceItem(models.Model):
+    invoice = models.ForeignKey(SalesInvoice, related_name='items', on_delete=models.DO_NOTHING)
     item = models.ForeignKey(Item, on_delete=models.DO_NOTHING)
     quantity = models.PositiveIntegerField()
+
     discount_applicable = models.BooleanField(default=False)
-    discount = models.FloatField(default=0)  
-    
+    discount = models.FloatField(default=0.0)  # percentage
     line_total = models.FloatField()
 
     def save(self, *args, **kwargs):
-        self.line_total = round(self.quantity * self.price_per_unit, 2)
+        selling_price = self.item.selling_price or 0
+        subtotal = self.quantity * selling_price
+
+        if self.discount_applicable and self.discount > 0:
+            subtotal -= subtotal * (self.discount / 100)
+
+        self.line_total = round(subtotal, 2)
+        super().save(*args, **kwargs)
+class PurchaseInvoice(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name='purchase_invoices')
+    supplier_name = models.CharField(max_length=100)
+    invoice_number = models.CharField(max_length=100, unique=True)
+    invoice_date = models.DateField(auto_now_add=True)
+
+    total_price = models.FloatField(default=0.0)
+
+    def calculate_subtotal(self):
+        return sum(item.line_total for item in self.items.all())
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)  # Initial save for access
+        subtotal = self.calculate_subtotal()
+        self.total_price = round(subtotal, 2)
+        super().save(update_fields=['total_price'])  # Only update price field
+
+class PurchaseInvoiceItem(models.Model):
+    invoice = models.ForeignKey(PurchaseInvoice, related_name='items', on_delete=models.DO_NOTHING)
+    item_name = models.CharField(max_length=100)
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT)
+    quantity = models.FloatField()
+    cost_price = models.FloatField(help_text="Unit purchase price (cost)")
+    line_total = models.FloatField(blank=True, default=0.0)
+    def save(self, *args, **kwargs):
+        from .models import Item  # Avoid circular import if needed
+
+    # Check for existing items by name
+        existing_items = Item.objects.filter(item_name=self.item_name, company=self.invoice.company)
+
+        if existing_items.exists():
+            matched_item = None
+            for item in existing_items:
+                if round(item.price, 2) == round(self.cost_price, 2):
+                    matched_item = item
+                    break
+
+            if matched_item:
+                # Case 1: Same item name and same cost → increase quantity
+                matched_item.quantity += self.quantity
+                matched_item.save()
+            else:
+            # Case 2: Same name but different cost → create new item
+                Item.objects.create(
+                    company=self.invoice.company,
+                    item_name=self.item_name,
+                    item_code=f"{self.item_name[:3].upper()}_{Item.objects.count() + 1}",
+                    quantity=self.quantity,
+                    unit=self.unit,
+                    description="Auto-created from Purchase Invoice",
+                    tax_type=None,
+                    tax=None,
+                    price=self.cost_price,
+                    selling_price=self.cost_price * 1.1  # Default 10% markup
+                )
+        else:
+        # ✅ Case 3: Item name doesn't exist → create new item
+            Item.objects.create(
+                company=self.invoice.company,
+                item_name=self.item_name,
+                item_code=f"{self.item_name[:3].upper()}_{Item.objects.count() + 1}",
+                quantity=self.quantity,
+                unit=self.unit,
+                description="Auto-created from Purchase Invoice",
+                tax_type=None,
+                tax=None,
+                price=self.cost_price,
+                selling_price=self.cost_price * 1.1
+            )
+
+    # Calculate line total
+        self.line_total = round(self.quantity * self.cost_price, 2)
         super().save(*args, **kwargs)

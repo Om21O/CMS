@@ -26,24 +26,48 @@ class ItemSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class InvoiceItemSerializer(serializers.ModelSerializer):
+class SalesInvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
-        model = InvoiceItem
-        fields = '__all__'
-class InvoiceSerializer(serializers.ModelSerializer):
-    items = InvoiceItemSerializer(many=True)
+        model = SalesInvoiceItem
+        fields = ['item', 'quantity', 'discount_applicable', 'discount']
+
+class SalesInvoiceSerializer(serializers.ModelSerializer):
+    items = SalesInvoiceItemSerializer(many=True)
 
     class Meta:
-        model = Invoice
+        model = SalesInvoice
         fields = '__all__'
-        read_only_fields = 'id'
+
     def create(self, validated_data):
         items_data = validated_data.pop('items')
-        invoice = Invoice.objects.create(**validated_data)
+        invoice = SalesInvoice.objects.create(**validated_data)
         total = 0
         for item_data in items_data:
-            item_instance = InvoiceItem.objects.create(invoice=invoice, **item_data)
+            item_instance = SalesInvoiceItem.objects.create(invoice=invoice, **item_data)
             total += item_instance.line_total
-        invoice.total_price = total
-        invoice.save()
+        invoice.total_price = invoice.apply_final_discount(total)
+        invoice.save(update_fields=['total_price'])
+        return invoice
+
+class PurchaseInvoiceItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseInvoiceItem
+        fields = ['item_name', 'unit', 'quantity', 'cost_price']
+
+class PurchaseInvoiceSerializer(serializers.ModelSerializer):
+    items = PurchaseInvoiceItemSerializer(many=True)
+
+    class Meta:
+        model = PurchaseInvoice
+        fields = '__all__'
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        invoice = PurchaseInvoice.objects.create(**validated_data)
+        total = 0
+        for item_data in items_data:
+            item_instance = PurchaseInvoiceItem.objects.create(invoice=invoice, **item_data)
+            total += item_instance.line_total
+        invoice.total_price = round(total, 2)
+        invoice.save(update_fields=['total_price'])
         return invoice

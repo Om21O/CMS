@@ -40,9 +40,13 @@ urlpatterns = [
     path('item/delete/<int:pk>/', DeleteItemView.as_view()),
 
     # Invoice
-    path('invoice/create/', CreateInvoiceView.as_view()),
-    path('invoice/list/', ListInvoicesView.as_view()),
-    path('invoice/<int:pk>/', RetrieveInvoiceView.as_view()),
-    path('invoice/update/<int:pk>/', UpdateInvoiceView.as_view()),
-    path('invoice/delete/<int:pk>/', DeleteInvoiceView.as_view()),
+    # Sales Invoice URLs
+    path('sales-invoice/create/', CreateSalesInvoiceView.as_view(), name='create_sales_invoice'),
+    path('sales-invoice/list/', ListSalesInvoiceView.as_view(), name='list_sales_invoice'),
+    path('sales-invoice/delete/<int:pk>/', DeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
+
+    # Purchase Invoice URLs
+    path('purchase-invoice/create/', CreatePurchaseInvoiceView.as_view(), name='create_purchase_invoice'),
+    path('purchase-invoice/list/', ListPurchaseInvoiceView.as_view(), name='list_purchase_invoice'),
+    path('purchase-invoice/delete/<int:pk>/', DeletePurchaseInvoiceView.as_view(), name='delete_purchase_invoice'),
 ]
