@@ -101,7 +101,9 @@ class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, related_name='items', on_delete=models.DO_NOTHING)
     item = models.ForeignKey(Item, on_delete=models.DO_NOTHING)
     quantity = models.PositiveIntegerField()
-    price_per_unit = models.FloatField()
+    discount_applicable = models.BooleanField(default=False)
+    discount = models.FloatField(default=0)  
+    
     line_total = models.FloatField()
 
     def save(self, *args, **kwargs):
