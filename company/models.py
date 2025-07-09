@@ -68,19 +68,20 @@ class Item(models.Model):
     selling_price = models.FloatField(help_text="Selling price per unit", default=0.0, blank=True, null=True)
 
     def __str__(self):
+
         return f"{self.item_name} - {self.item_code} ({self.company.company_name})"
 
     def save (self, *args, **kwargs):
-        if self.tax_type == 'withtax':
-            if self.tax is None:
-                raise ValueError("Tax must be provided for 'withtax'")
-            base_price = self.price or 0
-            base_selling = self.selling_price or 0
-            self.price = round(self.price * (1 + self.tax / 100), 2)
-            self.selling_price = round(self.selling_price * (1 + self.tax / 100), 2)
-        else:
-            self.price = round(self.price or 0, 2)
-            self.selling_price = round(self.selling_price or 0, 2)
+        # if self.tax_type =='1':
+        #     if self.tax is None:
+        #         raise ValueError("Tax must be provided for 'withtax'")
+        #     base_price = self.price or 0
+        #     base_selling = self.selling_price or 0
+        #     self.price = round(base_price * (1 + self.tax / 100), 2)
+        #     self.selling_price = round(base_selling * (1 + self.tax / 100), 2)
+        # else:
+        #     self.price = round(self.price or 0, 2)
+            # self.selling_price = round(self.selling_price or 0, 2)
 
         if self.quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -105,7 +106,7 @@ class SalesInvoice(models.Model):
 
     def apply_final_discount(self, subtotal):
         if self.final_discount_applicable and self.final_discount > 0:
-            return round(subtotal * (1 - self.final_discount / 100), 2)
+            return round(subtotal - (subtotal * self.final_discount / 100), 2)
         return round(subtotal, 2)
 
     def save(self, *args, **kwargs):
@@ -122,7 +123,7 @@ class SalesInvoiceItem(models.Model):
 
     discount_applicable = models.BooleanField(default=False)
     discount = models.FloatField(default=0.0)  # percentage
-    line_total = models.FloatField()
+    line_total = models.FloatField(default=0.0)
 
     def save(self, *args, **kwargs):
         selling_price = self.item.selling_price or 0

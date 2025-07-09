@@ -28,6 +28,7 @@ from django.db import transaction
 #     public=True,
 #     permission_classes=[AllowAny],  # Optional
 # )
+# from drf_yasg.utils import swagger_auto_schema
 
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Allow any user to access this view
@@ -76,8 +77,9 @@ class LogoutView(APIView):
 
 class CreateOwnerView(APIView):
     # You can make it public or protected — up to you
-    permission_classes = [IsAuthenticated]
-    # permission_classes = [AllowAny]
+    #permission_classes = [AllowAny]
+    # @swagger_auto_schema(request_body=ClientSerializer)
+    permission_classes = [AllowAny]
     def post(self, request):
         data = request.data
         username = data.get('username')
@@ -125,7 +127,7 @@ class CreateOwnerView(APIView):
             return Response({"error": str(e), "status": 500})
 
 class OwnerDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, pk):
         try:
@@ -139,7 +141,7 @@ class OwnerDetailView(APIView):
 
 # ------------------ COMPANY CREATE ------------------
 class CreateCompanyView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     # permission_classes = [AllowAny]
 
     def post(self, request):
@@ -188,7 +190,7 @@ class CreateCompanyView(APIView):
 
 # ------------------ CLIENT CREATE ------------------
 class CreateClientView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -226,25 +228,26 @@ class CreateClientView(APIView):
 
 # ------------------ ITEM CREATE ------------------
 class CreateItemView(APIView):
-   # permission_classes = [IsAuthenticated]
     permission_classes = [AllowAny]
+
     def post(self, request):
         data = request.data
         company_id = data.get('company_id')
         item_name = data.get('item_name')
         item_code = data.get('item_code')
-        unit = data.get('unit')
-        quantity = data.get('quantity')
+        unit_id = data.get('unit')
+        quantity = float(data.get('quantity', 0))
         description = data.get('description')
-        tax_type = data.get('tax_type')
+        tax_type_id = int(data.get('tax_type'))
         tax = data.get('tax')
-        price = data.get('price')
+        price = float(data.get('price'))
+        selling_price = float(data.get('selling_price', 0))  # fallback to price if not set
 
-        if not all([company_id, item_name, item_code, quantity, description, tax_type, price]):
+        if not all([company_id, item_name, item_code, quantity, description, tax_type_id is not None, price]):
             return Response({"error": "Missing required fields", "status": 400}, status=400)
 
-        if tax_type not in ['withtax', 'withouttax']:
-            return Response({"error": "tax_type must be 'withtax' or 'withouttax'", "status": 400}, status=400)
+        if quantity <= 0:
+            return Response({"error": "Quantity must be greater than zero", "status": 400}, status=400)
 
         try:
             company = Company.objects.get(id=company_id)
@@ -254,8 +257,31 @@ class CreateItemView(APIView):
         if Item.objects.filter(item_code=item_code).exists():
             return Response({"error": "Item code must be unique", "status": 400}, status=400)
 
-        if tax_type == 'withtax' and not tax:
-            return Response({"error": "Tax is required for 'withtax' items", "status": 400}, status=400)
+        try:
+            unit = Unit.objects.get(id=unit_id)
+        except Unit.DoesNotExist:
+            return Response({"error": "Unit not found", "status": 404}, status=404)
+
+        try:
+            tax_type = TaxType.objects.get(id=tax_type_id)
+        except TaxType.DoesNotExist:
+            return Response({"error": "TaxType not found", "status": 404}, status=404)
+
+        
+        if tax_type.code == '1':
+            if tax is None:
+                return Response({"error": "Tax is required for 'withtax' items", "status": 400}, status=400)
+            try:
+                tax = float(tax)
+            except ValueError:
+                return Response({"error": "Invalid tax value", "status": 400}, status=400)
+
+            price = round(price * (1 + tax / 100), 2)
+            selling_price = round((selling_price or price) * (1 + tax / 100), 2)
+        else:
+            tax = 0
+            price = round(price, 2)
+            selling_price = round(selling_price or price, 2)
 
         try:
             item = Item.objects.create(
@@ -266,8 +292,9 @@ class CreateItemView(APIView):
                 quantity=quantity,
                 description=description,
                 tax_type=tax_type,
-                tax=tax if tax_type == 'withtax' else 0,
-                price=price
+                tax=tax,
+                price=price,
+                selling_price=selling_price
             )
 
             return Response({
@@ -277,17 +304,80 @@ class CreateItemView(APIView):
 
         except Exception as e:
             return Response({"error": str(e), "status": 500}, status=500)
-
 # ------------------ INVOICE CREATE ------------------
 class CreateSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = SalesInvoiceSerializer(data=request.data)
-        if serializer.is_valid():
-            invoice = serializer.save()
-            return Response(SalesInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        items_data = request.data.get("items", [])
+
+        try:
+            with transaction.atomic():
+                invoice = SalesInvoice.objects.create(
+                    company=data["company"],
+                    client=data["client"],
+                    invoice_number=data["invoice_number"],
+                    final_discount_applicable=data.get("final_discount_applicable", False),
+                    final_discount=data.get("final_discount", 0)
+                )
+
+                subtotal = 0
+
+                for item_data in items_data:
+                    item_id = item_data.get("item")
+                    quantity = item_data.get("quantity")
+                    discount_applicable = item_data.get("discount_applicable", False)
+                    discount = item_data.get("discount", 0)
+
+                    if not all([item_id, quantity]):
+                        raise ValueError("Item ID and quantity are required")
+
+                    item = Item.objects.get(id=item_id)
+
+                    if item.quantity < quantity:
+                        raise ValueError(
+                            f"Not enough stock for item: {item.item_name}. "
+                            f"Available: {item.quantity}, Requested: {quantity}"
+                        )
+
+                    # Deduct quantity
+                    item.quantity -= quantity
+                    item.save()
+
+                    # Calculate line total
+                    selling_price = item.selling_price or 0
+                    line_total = quantity * selling_price
+                    if discount_applicable and discount > 0:
+                        line_total -= line_total * (discount / 100)
+
+                    line_total = round(line_total, 2)
+                    subtotal += line_total
+
+                    SalesInvoiceItem.objects.create(
+                        invoice=invoice,
+                        item=item,
+                        quantity=quantity,
+                        discount_applicable=discount_applicable,
+                        discount=discount,
+                        line_total=line_total
+                    )
+
+                invoice.total_price = invoice.apply_final_discount(subtotal)
+                invoice.save(update_fields=["total_price"])
+
+                return Response(SalesInvoiceSerializer(invoice).data, status=201)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
 
 class CreatePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         serializer = PurchaseInvoiceSerializer(data=request.data)
         if serializer.is_valid():
@@ -296,7 +386,7 @@ class CreatePurchaseInvoiceView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UpdateOwnerView(APIView):
-    #permission_classes = [IsAuthenticated]
+    #permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def put(self, request, pk):
         owner = get_object_or_404(Owner, pk=pk)
@@ -307,7 +397,7 @@ class UpdateOwnerView(APIView):
         return Response({"error": serializer.errors, "status": 400}, status=400)
 
 class DeleteOwnerView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def delete(self, request, pk):
         owner = get_object_or_404(Owner, pk=pk)
@@ -316,7 +406,7 @@ class DeleteOwnerView(APIView):
 
 # ------------------ COMPANY UPDATE & DELETE ------------------
 class UpdateCompanyView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def put(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
@@ -327,7 +417,7 @@ class UpdateCompanyView(APIView):
         return Response({"error": serializer.errors, "status": 400}, status=400)
 
 class DeleteCompanyView(APIView):
-    #permission_classes = [IsAuthenticated]
+    #permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def delete(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
@@ -336,7 +426,7 @@ class DeleteCompanyView(APIView):
 
 # ------------------ CLIENT UPDATE & DELETE ------------------
 class UpdateClientView(APIView):
-    #permission_classes = [IsAuthenticated]
+    #permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def put(self, request, pk):
         client = get_object_or_404(Client, pk=pk)
@@ -347,7 +437,7 @@ class UpdateClientView(APIView):
         return Response({"error": serializer.errors, "status": 400}, status=400)
 
 class DeleteClientView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def delete(self, request, pk):
         client = get_object_or_404(Client, pk=pk)
@@ -356,7 +446,7 @@ class DeleteClientView(APIView):
 
 # ------------------ ITEM UPDATE & DELETE ------------------
 class UpdateItemView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def put(self, request, pk):
         item = get_object_or_404(Item, pk=pk)
@@ -367,7 +457,7 @@ class UpdateItemView(APIView):
         return Response({"error": serializer.errors, "status": 400}, status=400)
 
 class DeleteItemView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def delete(self, request, pk):
         item = get_object_or_404(Item, pk=pk)
@@ -376,18 +466,21 @@ class DeleteItemView(APIView):
 
 # ------------------ INVOICE UPDATE & DELETE ------------------
 class ListSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         invoices = SalesInvoice.objects.all()
         serializer = SalesInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class ListPurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         invoices = PurchaseInvoice.objects.all()
         serializer = PurchaseInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class DeleteSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
     def delete(self, request, pk):
         try:
             invoice = SalesInvoice.objects.get(pk=pk)
@@ -397,6 +490,7 @@ class DeleteSalesInvoiceView(APIView):
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
 class DeletePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
     def delete(self, request, pk):
         try:
             invoice = PurchaseInvoice.objects.get(pk=pk)
@@ -408,7 +502,7 @@ class DeletePurchaseInvoiceView(APIView):
 # ------------------ LIST & RETRIEVE VIEWS ------------------
 
 class ListOwnersView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
         owners = Owner.objects.all()
@@ -416,7 +510,7 @@ class ListOwnersView(APIView):
         return Response(serializer.data, status=200)
 
 class RetrieveOwnerView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
         owner = get_object_or_404(Owner, pk=pk)
@@ -424,7 +518,7 @@ class RetrieveOwnerView(APIView):
         return Response(serializer.data, status=200)
 
 class ListCompaniesView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
         companies = Company.objects.all()
@@ -432,7 +526,7 @@ class ListCompaniesView(APIView):
         return Response(serializer.data, status=200)
 
 class RetrieveCompanyView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny] 
     def get(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
@@ -440,7 +534,7 @@ class RetrieveCompanyView(APIView):
         return Response(serializer.data, status=200)
 
 class ListClientsView(APIView):
-  #  permission_classes = [IsAuthenticated]
+  #  permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
         clients = Client.objects.all()
@@ -448,7 +542,7 @@ class ListClientsView(APIView):
         return Response(serializer.data, status=200)
 
 class RetrieveClientView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
         client = get_object_or_404(Client, pk=pk)
@@ -456,7 +550,7 @@ class RetrieveClientView(APIView):
         return Response(serializer.data, status=200)
 
 class ListItemsView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
         items = Item.objects.all()
@@ -464,7 +558,7 @@ class ListItemsView(APIView):
         return Response(serializer.data, status=200)
 
 class RetrieveItemView(APIView):
-   # permission_classes = [IsAuthenticated]
+   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
         item = get_object_or_404(Item, pk=pk)
@@ -472,7 +566,7 @@ class RetrieveItemView(APIView):
         return Response(serializer.data, status=200)
 
 # class ListInvoicesView(APIView):
-#    # permission_classes = [IsAuthenticated]
+#    # permission_classes = [AllowAny]
 #     permission_classes = [AllowAny]
 #     def get(self, request):
 #         invoices = Invoice.objects.all()
@@ -480,7 +574,7 @@ class RetrieveItemView(APIView):
 #         return Response(serializer.data, status=200)
 
 # class RetrieveInvoiceView(APIView):
-#    # permission_classes = [IsAuthenticated]
+#    # permission_classes = [AllowAny]
 #     permission_classes = [AllowAny]
 #     def get(self, request, pk):
 #         invoice = get_object_or_404(Invoice, pk=pk)

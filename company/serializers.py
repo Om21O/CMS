@@ -29,7 +29,7 @@ class ItemSerializer(serializers.ModelSerializer):
 class SalesInvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesInvoiceItem
-        fields = ['item', 'quantity', 'discount_applicable', 'discount']
+        exclude = ['invoice']  # don't expect invoice in input
 
 class SalesInvoiceSerializer(serializers.ModelSerializer):
     items = SalesInvoiceItemSerializer(many=True)
@@ -37,18 +37,6 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesInvoice
         fields = '__all__'
-
-    def create(self, validated_data):
-        items_data = validated_data.pop('items')
-        invoice = SalesInvoice.objects.create(**validated_data)
-        total = 0
-        for item_data in items_data:
-            item_instance = SalesInvoiceItem.objects.create(invoice=invoice, **item_data)
-            total += item_instance.line_total
-        invoice.total_price = invoice.apply_final_discount(total)
-        invoice.save(update_fields=['total_price'])
-        return invoice
-
 class PurchaseInvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseInvoiceItem
