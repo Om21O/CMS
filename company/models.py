@@ -66,7 +66,7 @@ class Item(models.Model):
     tax = models.FloatField(blank=True, null=True)
     price = models.FloatField(help_text="Base price per unit")
     selling_price = models.FloatField(help_text="Selling price per unit", default=0.0, blank=True, null=True)
-
+    deleted = models.BooleanField(default=False)
     def __str__(self):
 
         return f"{self.item_name} - {self.item_code} ({self.company.company_name})"
@@ -100,6 +100,7 @@ class SalesInvoice(models.Model):
     final_discount_applicable = models.BooleanField(default=False)
     final_discount = models.FloatField(default=0.0)  # percentage
     total_price = models.FloatField(default=0.0)
+    deleted = models.BooleanField(default=False)
 
     def calculate_subtotal(self):
         return sum(item.line_total for item in self.items.all())
@@ -124,7 +125,9 @@ class SalesInvoiceItem(models.Model):
     discount_applicable = models.BooleanField(default=False)
     discount = models.FloatField(default=0.0)  # percentage
     line_total = models.FloatField(default=0.0)
-
+    deleted = models.BooleanField(default=False)
+    def __str__(self):
+        return f"{self.item.item_name} - {self.quantity} ({self.invoice.invoice_number})"
     def save(self, *args, **kwargs):
         selling_price = self.item.selling_price or 0
         subtotal = self.quantity * selling_price
@@ -140,6 +143,7 @@ class PurchaseInvoice(models.Model):
     invoice_number = models.CharField(max_length=100, unique=True)
     invoice_date = models.DateField(auto_now_add=True)
     total_price = models.FloatField(default=0.0)
+    deleted = models.BooleanField(default=False)
 
 
 class PurchaseInvoiceItem(models.Model):
@@ -149,3 +153,4 @@ class PurchaseInvoiceItem(models.Model):
     quantity = models.FloatField()
     cost_price = models.FloatField(help_text="Unit purchase price (cost)")
     line_total = models.FloatField(blank=True, default=0.0)
+    deleted = models.BooleanField(default=False)
