@@ -695,7 +695,27 @@ class RetrieveItemView(APIView):
         item = get_object_or_404(Item, pk=pk)
         serializer = ItemSerializer(item)
         return Response(serializer.data, status=200)
+class RetrieveSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
 
+    def get(self, request, pk):
+        try:
+            invoice = SalesInvoice.objects.get(pk=pk, is_deleted=False)
+            serializer = SalesInvoiceSerializer(invoice)
+            return Response(serializer.data, status=200)
+        except SalesInvoice.DoesNotExist:
+            return Response({"error": "Sales invoice not found"}, status=404)
+        
+class RetrievePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            invoice = PurchaseInvoice.objects.get(pk=pk, is_deleted=False)
+            serializer = PurchaseInvoiceSerializer(invoice)
+            return Response(serializer.data, status=200)
+        except PurchaseInvoice.DoesNotExist:
+            return Response({"error": "Purchase invoice not found"}, status=404)
 # class ListInvoicesView(APIView):
 #    # permission_classes = [AllowAny]
 #     permission_classes = [AllowAny]
