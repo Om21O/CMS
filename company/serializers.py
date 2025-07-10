@@ -32,7 +32,7 @@ class SalesInvoiceItemSerializer(serializers.ModelSerializer):
         exclude = ['invoice']  # don't expect invoice in input
 
 class SalesInvoiceSerializer(serializers.ModelSerializer):
-    items = SalesInvoiceItemSerializer(many=True)
+    items = SalesInvoiceItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = SalesInvoice
@@ -43,7 +43,7 @@ class PurchaseInvoiceItemSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class PurchaseInvoiceSerializer(serializers.ModelSerializer):
-    items = PurchaseInvoiceItemSerializer(many=True)
+    items = PurchaseInvoiceItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = PurchaseInvoice

@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-
+from django.core.exceptions import ValidationError
 # Create your models here.
 
 class Owner(models.Model):
@@ -83,8 +83,8 @@ class Item(models.Model):
         #     self.price = round(self.price or 0, 2)
             # self.selling_price = round(self.selling_price or 0, 2)
 
-        if self.quantity <= 0:
-            raise ValueError("Quantity must be greater than zero")
+        # if self.quantity <= 0:
+        #     raise ValidationError("Quantity must be greater than zero")
 
         super().save(*args, **kwargs)
 

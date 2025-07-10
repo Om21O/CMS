@@ -18,6 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from rest_framework import permissions
 from django.db import transaction
+from rest_framework.exceptions import ValidationError
 # from drf_yasg.views import get_schema_view
 # from drf_yasg import openapi
 # Create your views here.
@@ -236,19 +237,27 @@ class CreateItemView(APIView):
         item_name = data.get('item_name')
         item_code = data.get('item_code')
         unit_id = data.get('unit')
-        quantity = float(data.get('quantity', 0))
+        quantity_raw = data.get('quantity')
         description = data.get('description')
         tax_type_id = int(data.get('tax_type'))
         tax = data.get('tax')
         price = float(data.get('price'))
         selling_price = float(data.get('selling_price', 0))  # fallback to price if not set
 
-        if not all([company_id, item_name, item_code, quantity, description, tax_type_id is not None, price]):
+        # Check for missing fields (None or empty string)
+        required_fields = [company_id, item_name, item_code, unit_id, description, tax_type_id, price]
+        if any(x in [None, ""] for x in required_fields):
             return Response({"error": "Missing required fields", "status": 400}, status=400)
 
-        if quantity <= 0:
-            return Response({"error": "Quantity must be greater than zero", "status": 400}, status=400)
-
+        quantity_raw = data.get('quantity')
+        if quantity_raw in [None, '', 0, '0']:
+            return Response({"error": "Quantity must be provided and > 0"}, status=400)
+        try:
+            quantity = float(quantity_raw)
+            if quantity <= 0:
+                return Response({"error": f"Quantity must be > 0. Got {quantity}"}, status=400)
+        except (ValueError, TypeError):
+            return Response({"error": "Quantity must be a number"}, status=400)
         try:
             company = Company.objects.get(id=company_id)
         except Company.DoesNotExist:
@@ -568,7 +577,7 @@ class ListSalesInvoiceView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        invoices = SalesInvoice.objects.filter(is_deleted=False)
+        invoices = SalesInvoice.objects.filter(deleted=False)
         serializer = SalesInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -576,7 +585,7 @@ class ListPurchaseInvoiceView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        invoices = PurchaseInvoice.objects.filter(is_deleted=False)
+        invoices = PurchaseInvoice.objects.filter(deleted=False)
         serializer = PurchaseInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -585,7 +594,7 @@ class DeleteSalesInvoiceView(APIView):
 
     def delete(self, request, pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk, is_deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk,deleted=False)
             items = invoice.items.all()
 
             for item_entry in items:
@@ -606,7 +615,7 @@ class DeletePurchaseInvoiceView(APIView):
 
     def delete(self, request, pk):
         try:
-            invoice = PurchaseInvoice.objects.get(pk=pk, is_deleted=False)
+            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
             items = invoice.items.all()
 
             for pi_item in items:
@@ -621,8 +630,8 @@ class DeletePurchaseInvoiceView(APIView):
                     item.quantity = max(0, item.quantity)
                     item.save()
 
-            invoice.is_deleted = True
-            invoice.save(update_fields=['is_deleted'])
+            invoice.deleted = True
+            invoice.save(update_fields=['deleted'])
 
             return Response({"detail": "Purchase invoice soft-deleted"}, status=status.HTTP_200_OK)
 
@@ -636,7 +645,7 @@ class ListOwnersView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
-        owners = Owner.objects.all()
+        owners = Owner.objects.filter(deleted=False)
         serializer = OwnerSerializer(owners, many=True)
         return Response(serializer.data, status=200)
 
@@ -644,7 +653,7 @@ class RetrieveOwnerView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
-        owner = get_object_or_404(Owner, pk=pk)
+        owner = get_object_or_404(Owner, pk=pk,deleted=False)
         serializer = OwnerSerializer(owner)
         return Response(serializer.data, status=200)
 
@@ -652,7 +661,7 @@ class ListCompaniesView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
-        companies = Company.objects.all()
+        companies = Company.objects.filter(deleted=False)
         serializer = CompanySerializer(companies, many=True)
         return Response(serializer.data, status=200)
 
@@ -660,7 +669,7 @@ class RetrieveCompanyView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny] 
     def get(self, request, pk):
-        company = get_object_or_404(Company, pk=pk)
+        company = get_object_or_404(Company, pk=pk,deleted=False)
         serializer = CompanySerializer(company)
         return Response(serializer.data, status=200)
 
@@ -668,7 +677,7 @@ class ListClientsView(APIView):
   #  permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
-        clients = Client.objects.all()
+        clients = Client.objects.filter(deleted=False)
         serializer = ClientSerializer(clients, many=True)
         return Response(serializer.data, status=200)
 
@@ -676,7 +685,7 @@ class RetrieveClientView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
-        client = get_object_or_404(Client, pk=pk)
+        client = get_object_or_404(Client, pk=pk,deleted=False)
         serializer = ClientSerializer(client)
         return Response(serializer.data, status=200)
 
@@ -684,7 +693,7 @@ class ListItemsView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request):
-        items = Item.objects.all()
+        items = Item.objects.filter(deleted=False)
         serializer = ItemSerializer(items, many=True)
         return Response(serializer.data, status=200)
 
@@ -692,7 +701,7 @@ class RetrieveItemView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
     def get(self, request, pk):
-        item = get_object_or_404(Item, pk=pk)
+        item = get_object_or_404(Item, pk=pk,deleted=False)
         serializer = ItemSerializer(item)
         return Response(serializer.data, status=200)
 class RetrieveSalesInvoiceView(APIView):
@@ -700,7 +709,7 @@ class RetrieveSalesInvoiceView(APIView):
 
     def get(self, request, pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk, is_deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
             serializer = SalesInvoiceSerializer(invoice)
             return Response(serializer.data, status=200)
         except SalesInvoice.DoesNotExist:
@@ -711,23 +720,197 @@ class RetrievePurchaseInvoiceView(APIView):
 
     def get(self, request, pk):
         try:
-            invoice = PurchaseInvoice.objects.get(pk=pk, is_deleted=False)
+            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
             serializer = PurchaseInvoiceSerializer(invoice)
             return Response(serializer.data, status=200)
         except PurchaseInvoice.DoesNotExist:
             return Response({"error": "Purchase invoice not found"}, status=404)
-# class ListInvoicesView(APIView):
-#    # permission_classes = [AllowAny]
-#     permission_classes = [AllowAny]
-#     def get(self, request):
-#         invoices = Invoice.objects.all()
-#         serializer = InvoiceSerializer(invoices, many=True)
-#         return Response(serializer.data, status=200)
 
-# class RetrieveInvoiceView(APIView):
-#    # permission_classes = [AllowAny]
-#     permission_classes = [AllowAny]
-#     def get(self, request, pk):
-#         invoice = get_object_or_404(Invoice, pk=pk)
-#         serializer = InvoiceSerializer(invoice)
-#         return Response(serializer.data, status=200)
+class UpdateSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def put(self, request, pk):
+        try:
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+        except SalesInvoice.DoesNotExist:
+            return Response({"error": "Sales invoice not found"}, status=404)
+
+        # Exclude current invoice from unique check
+        invoice_number = request.data.get("invoice_number")
+        if invoice_number and SalesInvoice.objects.exclude(pk=pk).filter(invoice_number=invoice_number).exists():
+            return Response({"invoice_number": ["sales invoice with this invoice number already exists."]}, status=400)
+
+        serializer = SalesInvoiceSerializer(invoice, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        items_data = request.data.get("items", [])
+        try:
+            with transaction.atomic():
+                # Restore stock for old items
+                for item_entry in invoice.items.all():
+                    item = item_entry.item
+                    item.quantity += item_entry.quantity
+                    item.save()
+                invoice.items.all().delete()
+
+                subtotal = 0   
+                for item_data in items_data:
+                    item_id = item_data.get("item")
+                    quantity = item_data.get("quantity")
+                    discount_applicable = item_data.get("discount_applicable", False)
+                    discount = item_data.get("discount", 0)
+
+                    if not all([item_id, quantity]):
+                        raise ValidationError("Item ID and quantity are required")
+
+                    item = Item.objects.get(id=item_id)
+                    if item.quantity < quantity:
+                        raise ValidationError(
+                            f"Not enough stock for item: {item.item_name}. "
+                            f"Available: {item.quantity}, Requested: {quantity}"
+                        )
+                    item.quantity -= quantity
+                    item.save()
+
+                    selling_price = item.selling_price or 0
+                    line_total = quantity * selling_price
+                    if discount_applicable and discount > 0:
+                        line_total -= line_total * (discount / 100)
+                    line_total = round(line_total, 2)
+                    subtotal += line_total
+
+                    SalesInvoiceItem.objects.create(
+                        invoice=invoice,
+                        item=item,
+                        quantity=quantity,
+                        discount_applicable=discount_applicable,
+                        discount=discount,
+                        line_total=line_total
+                    )
+
+                serializer.save(total_price=invoice.apply_final_discount(subtotal))
+                return Response(SalesInvoiceSerializer(invoice).data, status=200)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+class UpdatePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def put(self, request, pk):
+        try:
+            invoice = PurchaseInvoice.objects.get(pk=pk, deleted=False)
+        except PurchaseInvoice.DoesNotExist:
+            return Response({"error": "Purchase invoice not found"}, status=404)
+
+        data = request.data
+        items = data.get('items', [])
+
+        if not items:
+            return Response({"error": "At least one item is required"}, status=400)
+
+        try:
+            with transaction.atomic():
+                # STEP 1: Rollback old stock using exact item match (item_name + unit + cost_price)
+                for pi_item in invoice.items.all():
+                    try:
+                        matched_item = Item.objects.get(
+                            item_name=pi_item.item_name,
+                            unit=pi_item.unit,
+                            company=invoice.company,
+                            price=pi_item.cost_price
+                        )
+                    except Item.DoesNotExist:
+                        raise ValidationError(
+                            f"No matching item found for rollback: {pi_item.item_name} at price {pi_item.cost_price}"
+                        )
+
+                    if matched_item.quantity < pi_item.quantity:
+                        raise ValidationError(
+                            f"Cannot update invoice: Not enough stock to remove for item '{matched_item.item_name}'. "
+                            f"Current stock: {matched_item.quantity}, to remove: {pi_item.quantity}"
+                        )
+
+                    matched_item.quantity -= pi_item.quantity
+                    matched_item.save()
+
+                invoice.items.all().delete()
+
+                # STEP 2: Add new items
+                total_price = 0
+                for item_data in items:
+                    item_name = item_data.get('item_name')
+                    unit_id = item_data.get('unit')
+                    quantity = item_data.get('quantity')
+                    cost_price = item_data.get('cost_price')
+
+                    if not item_name or not unit_id or quantity in [None, "", 0] or cost_price in [None, "", 0]:
+                        raise ValidationError("All item fields are required and must be greater than zero.")
+
+                    try:
+                        quantity = float(quantity)
+                        cost_price = float(cost_price)
+                    except Exception:
+                        raise ValidationError("Quantity and cost price must be valid numbers.")
+
+                    if quantity <= 0:
+                        raise ValidationError(f"Quantity must be greater than zero for item: {item_name}")
+                    if cost_price <= 0:
+                        raise ValidationError(f"Cost price must be greater than zero for item: {item_name}")
+
+                    try:
+                        unit = Unit.objects.get(id=unit_id)
+                    except Unit.DoesNotExist:
+                        raise ValidationError(f"Invalid unit ID '{unit_id}' for item '{item_name}'.")
+
+                    line_total = round(quantity * cost_price, 2)
+                    total_price += line_total
+
+                    # STEP 2.1: Reuse existing item if same name, company, unit and price match
+                    existing_items = Item.objects.filter(
+                        item_name=item_name,
+                        company=invoice.company,
+                        unit=unit,
+                        price=cost_price
+                    ).order_by('id')
+
+                    if existing_items.exists():
+                        matched_item = existing_items.first()
+                        matched_item.quantity += quantity
+                        matched_item.save()
+                    else:
+                        matched_item = Item.objects.create(
+                            company=invoice.company,
+                            item_name=item_name,
+                            item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
+                            quantity=quantity,
+                            unit=unit,
+                            description="Auto-created from Purchase Invoice",
+                            tax_type=None,
+                            tax=None,
+                            price=cost_price,
+                            selling_price=round(cost_price * 1.1, 2)
+                        )
+
+                    # STEP 2.2: Create PurchaseInvoiceItem
+                    PurchaseInvoiceItem.objects.create(
+                        invoice=invoice,
+                        item_name=item_name,
+                        unit=unit,
+                        quantity=quantity,
+                        cost_price=cost_price,
+                        line_total=line_total
+                    )
+
+                # STEP 3: Update invoice main fields
+                invoice.supplier_name = data.get('supplier_name', invoice.supplier_name)
+                invoice.invoice_number = data.get('invoice_number', invoice.invoice_number)
+                invoice.total_price = round(total_price, 2)
+                invoice.save(update_fields=["supplier_name", "invoice_number", "total_price"])
+
+                return Response(PurchaseInvoiceSerializer(invoice).data, status=200)
+
+        except ValidationError as ve:
+            return Response({"error": str(ve)}, status=400)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)

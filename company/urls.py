@@ -44,13 +44,13 @@ urlpatterns = [
     path('sales-invoice/create/', CreateSalesInvoiceView.as_view(), name='create_sales_invoice'),
     path('sales-invoice/list/', ListSalesInvoiceView.as_view(), name='list_sales_invoice'),
     path('sales-invoice/delete/<int:pk>/', DeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
-    #path('sales-invoice/update/<int:pk>/', UpdateSalesInvoiceView.as_view(), name='update_sales_invoice'),
+    path('sales-invoice/update/<int:pk>/', UpdateSalesInvoiceView.as_view(), name='update_sales_invoice'),
     path('sales-invoice/<int:pk>/', RetrieveSalesInvoiceView.as_view(), name='retrieve_sales_invoice'),
 
     # Purchase Invoice URLs
     path('purchase-invoice/create/', CreatePurchaseInvoiceView.as_view(), name='create_purchase_invoice'),
     path('purchase-invoice/list/', ListPurchaseInvoiceView.as_view(), name='list_purchase_invoice'),
     path('purchase-invoice/delete/<int:pk>/', DeletePurchaseInvoiceView.as_view(), name='delete_purchase_invoice'),
-    #path('purchase-invoice/update/<int:pk>/', UpdatePurchaseInvoiceView.as_view(), name='update_purchase_invoice'),
+    path('purchase-invoice/update/<int:pk>/',UpdatePurchaseInvoiceView.as_view(), name='update_purchase_invoice'),
     path('purchase-invoice/<int:pk>/', RetrievePurchaseInvoiceView.as_view(), name='retrieve_purchase_invoice'),
 ]
