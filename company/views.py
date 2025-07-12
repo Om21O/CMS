@@ -143,7 +143,6 @@ class OwnerDetailView(APIView):
 # ------------------ COMPANY CREATE ------------------
 class CreateCompanyView(APIView):
     permission_classes = [AllowAny]
-    # permission_classes = [AllowAny]
 
     def post(self, request):
         data = request.data
@@ -154,8 +153,24 @@ class CreateCompanyView(APIView):
         address = data.get('address')
         type_of_company = data.get('type_of_company')
 
+        # Bank details from request
+        bank_name = data.get('bank_name')
+        account_holder_name = data.get('account_holder_name')
+        account_no = data.get('account_no')
+        ifsc_code = data.get('ifsc_code')
+        bank_address = data.get('bank_address')
+        branch = data.get('branch')
+        ad_code = data.get('ad_code')
+        swift_code = data.get('swift_code')
+        opening_balance = data.get('opening_balance', 0.0)
+        as_on = data.get('as_on')
+
+        # Validate company fields
         if not all([owner_id, company_name, phone_no, gst, address]):
-            return Response({"error": "Missing required fields", "status": 400}, status=400)
+            return Response({"error": "Missing required company fields", "status": 400}, status=400)
+        # Validate bank fields
+        if not all([bank_name, account_holder_name, account_no, ifsc_code, bank_address, branch, opening_balance, as_on]):
+            return Response({"error": "Missing required bank fields", "status": 400}, status=400)
 
         try:
             owner = Owner.objects.get(id=owner_id)
@@ -165,24 +180,39 @@ class CreateCompanyView(APIView):
         limit = 3 if owner.type_of_company == 'basic' else 5
         current = Company.objects.filter(owner=owner).count()
 
-        if current >=limit:
+        if current >= limit:
             return Response({
                 "error": f"{owner.type_of_company} plan allows only {limit} companies",
                 "status": 400
             }, status=400)
 
         try:
-            company = Company.objects.create(
-                owner=owner,
-                company_name=company_name,
-                phone_no=phone_no,
-                gst=gst,
-                address=address,
-                type_of_company=type_of_company
-            )
+            with transaction.atomic():
+                company = Company.objects.create(
+                    owner=owner,
+                    company_name=company_name,
+                    phone_no=phone_no,
+                    gst=gst,
+                    address=address,
+                    type_of_company=type_of_company
+                )
+
+                Bank.objects.create(
+                    company=company,
+                    bank_name=bank_name,
+                    account_holder_name=account_holder_name,
+                    account_no=account_no,
+                    ifsc_code=ifsc_code,
+                    address=bank_address,
+                    branch=branch,
+                    ad_code=ad_code,
+                    swift_code=swift_code,
+                    opening_balance=opening_balance,
+                    as_on=as_on
+                )
 
             return Response({
-                "msg": "Company created successfully",
+                "msg": "Company and Bank created successfully",
                 "company_id": company.id
             }, status=201)
 
@@ -191,34 +221,36 @@ class CreateCompanyView(APIView):
 
 # ------------------ CLIENT CREATE ------------------
 class CreateClientView(APIView):
-   # permission_classes = [AllowAny]
     permission_classes = [AllowAny]
 
     def post(self, request):
         data = request.data
-        company_id = data.get('company_id')
-        client_name = data.get('client_name')
-        address = data.get('address')
-        gst = data.get('gst')
-        phone_no = data.get('phone_no')
 
-        if not all([company_id, client_name, address, phone_no]):
+        required_fields = ['client_type', 'client_name', 'mobile_number', 'email', 'gstin', 'state', 'billing_address']
+        if not all(data.get(field) for field in required_fields):
             return Response({"error": "Missing required fields", "status": 400}, status=400)
 
         try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
-            return Response({"error": "Company not found", "status": 404}, status=404)
-
-        try:
             client = Client.objects.create(
-                company=company,
-                client_name=client_name,
-                address=address,
-                gst=gst,
-                phone_no=phone_no
+                client_type=data.get('client_type'),
+                client_name=data.get('client_name'),
+                mobile_number=data.get('mobile_number'),
+                email=data.get('email'),
+                gstin=data.get('gstin'),
+                pan=data.get('pan'),
+                state=data.get('state'),
+                billing_address=data.get('billing_address'),
+                billing_address_line2=data.get('billing_address_line2'),
+                shipping_address=data.get('shipping_address'),
+                pincode_special_economic_zone=data.get('pincode_special_economic_zone', False),
+                city=data.get('city'),
+                credit_period=data.get('credit_period', 0),
+                credit_limit=data.get('credit_limit', 0.0),
+                opening_balance=data.get('opening_balance', 0.0),
+                other_currency=data.get('other_currency', False),
+                check_discount=data.get('check_discount', False),
+                enable_multiple_address=data.get('enable_multiple_address', False)
             )
-
             return Response({
                 "msg": "Client created successfully",
                 "client_id": client.id
@@ -226,6 +258,8 @@ class CreateClientView(APIView):
 
         except Exception as e:
             return Response({"error": str(e), "status": 500}, status=500)
+
+           
 
 # ------------------ ITEM CREATE ------------------
 class CreateItemView(APIView):
@@ -239,25 +273,34 @@ class CreateItemView(APIView):
         unit_id = data.get('unit')
         quantity_raw = data.get('quantity')
         description = data.get('description')
-        tax_type_id = int(data.get('tax_type'))
+        tax_type_id = data.get('tax_type')
         tax = data.get('tax')
-        price = float(data.get('price'))
-        selling_price = float(data.get('selling_price', 0))  # fallback to price if not set
+        price = data.get('price')
+        selling_price = data.get('selling_price', price)
 
-        # Check for missing fields (None or empty string)
-        required_fields = [company_id, item_name, item_code, unit_id, description, tax_type_id, price]
-        if any(x in [None, ""] for x in required_fields):
+        # --- Validate required fields ---
+        if not all([company_id, item_name, item_code, unit_id, description, tax_type_id, price]):
             return Response({"error": "Missing required fields", "status": 400}, status=400)
 
-        quantity_raw = data.get('quantity')
-        if quantity_raw in [None, '', 0, '0']:
-            return Response({"error": "Quantity must be provided and > 0"}, status=400)
+        # --- Validate numeric fields ---
         try:
             quantity = float(quantity_raw)
             if quantity <= 0:
                 return Response({"error": f"Quantity must be > 0. Got {quantity}"}, status=400)
         except (ValueError, TypeError):
-            return Response({"error": "Quantity must be a number"}, status=400)
+            return Response({"error": "Quantity must be a valid number"}, status=400)
+
+        try:
+            price = float(price)
+        except (ValueError, TypeError):
+            return Response({"error": "Price must be a valid number"}, status=400)
+
+        try:
+            selling_price = float(selling_price or price)
+        except (ValueError, TypeError):
+            return Response({"error": "Selling price must be a valid number"}, status=400)
+
+        # --- Get related objects ---
         try:
             company = Company.objects.get(id=company_id)
         except Company.DoesNotExist:
@@ -276,8 +319,8 @@ class CreateItemView(APIView):
         except TaxType.DoesNotExist:
             return Response({"error": "TaxType not found", "status": 404}, status=404)
 
-        
-        if tax_type.code == '1':
+        # --- Tax and price calculation ---
+        if tax_type.code == '1':  # assuming '1' is the code for "with tax"
             if tax is None:
                 return Response({"error": "Tax is required for 'withtax' items", "status": 400}, status=400)
             try:
@@ -286,12 +329,13 @@ class CreateItemView(APIView):
                 return Response({"error": "Invalid tax value", "status": 400}, status=400)
 
             price = round(price * (1 + tax / 100), 2)
-            selling_price = round((selling_price or price) * (1 + tax / 100), 2)
+            selling_price = round(selling_price * (1 + tax / 100), 2)
         else:
             tax = 0
             price = round(price, 2)
-            selling_price = round(selling_price or price, 2)
+            selling_price = round(selling_price, 2)
 
+        # --- Create Item ---
         try:
             item = Item.objects.create(
                 company=company,
@@ -913,4 +957,107 @@ class UpdatePurchaseInvoiceView(APIView):
         except ValidationError as ve:
             return Response({"error": str(ve)}, status=400)
         except Exception as e:
-            return Response({"error": str(e)}, status=400)
+            return Response({"error": str(e)}, status=400) #outstanding,salesreport person ka name number
+        #9322212299
+class PaymentInView(APIView):
+    def post(self, request):
+        data = request.data
+        amount = float(data.get('amount'))
+        invoice_ids = data.get('invoice_ids', [])
+        bank_id = data.get('bank_id')
+
+        if not amount or not invoice_ids or not bank_id:
+            return Response({"error": "amount, invoice_ids, and bank_id are required."}, status=400)
+
+        try:
+            bank = Bank.objects.get(id=bank_id)
+        except Bank.DoesNotExist:
+            return Response({"error": "Bank not found."}, status=404)
+
+        with transaction.atomic():
+            for invoice_id in invoice_ids:
+                try:
+                    invoice = SalesInvoice.objects.select_for_update().get(id=invoice_id)
+                except SalesInvoice.DoesNotExist:
+                    continue
+
+                remaining = invoice.total_price - invoice.received_amt
+                if remaining <= 0:
+                    continue
+
+                if amount >= remaining:
+                    invoice.received_amt += remaining
+                    invoice.payment_status_id = 3  # Fully paid
+                    amount -= remaining
+                else:
+                    invoice.received_amt += amount
+                    invoice.payment_status_id = 2  # Partially paid
+                    amount = 0
+
+                invoice.save(update_fields=['received_amt', 'payment_status'])
+
+                if amount <= 0:
+                    break
+
+            # Update bank balance with transaction
+            BankTransaction.objects.create(
+                bank=bank,
+                company=bank.company,
+                amount=data['amount'],
+                transaction_type='credit',
+                description=f"Payment received for invoices: {invoice_ids}"
+            )
+
+        return Response({"status": 200, "message": "Payment applied successfully."})
+
+
+class PaymentOutView(APIView):
+    def post(self, request):
+        data = request.data
+        amount = float(data.get('amount'))
+        invoice_ids = data.get('invoice_ids', [])
+        bank_id = data.get('bank_id')
+
+        if not amount or not invoice_ids or not bank_id:
+            return Response({"error": "amount, invoice_ids, and bank_id are required."}, status=400)
+
+        try:
+            bank = Bank.objects.get(id=bank_id)
+        except Bank.DoesNotExist:
+            return Response({"error": "Bank not found."}, status=404)
+
+        with transaction.atomic():
+            for invoice_id in invoice_ids:
+                try:
+                    invoice = PurchaseInvoice.objects.select_for_update().get(id=invoice_id)
+                except PurchaseInvoice.DoesNotExist:
+                    continue
+
+                remaining = invoice.total_price - invoice.paid_amt
+                if remaining <= 0:
+                    continue
+
+                if amount >= remaining:
+                    invoice.paid_amt += remaining
+                    invoice.payment_status_id = 3  # Fully paid
+                    amount -= remaining
+                else:
+                    invoice.paid_amt += amount
+                    invoice.payment_status_id = 2  # Partially paid
+                    amount = 0
+
+                invoice.save(update_fields=['paid_amt', 'payment_status'])
+
+                if amount <= 0:
+                    break
+
+            # Deduct from bank balance
+            BankTransaction.objects.create(
+                bank=bank,
+                company=bank.company,
+                amount=data['amount'],
+                transaction_type='debit',
+                description=f"Payment made for purchase invoices: {invoice_ids}"
+            )
+
+        return Response({"status": 200, "message": "Payment applied and bank debited successfully."})

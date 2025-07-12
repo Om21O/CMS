@@ -53,4 +53,9 @@ urlpatterns = [
     path('purchase-invoice/delete/<int:pk>/', DeletePurchaseInvoiceView.as_view(), name='delete_purchase_invoice'),
     path('purchase-invoice/update/<int:pk>/',UpdatePurchaseInvoiceView.as_view(), name='update_purchase_invoice'),
     path('purchase-invoice/<int:pk>/', RetrievePurchaseInvoiceView.as_view(), name='retrieve_purchase_invoice'),
+    # Paymentin and url
+    path('payment-in/create/', PaymentInView.as_view(), name='create_payment_in'),
+    path('payment-out/create/', PaymentOutView.as_view(), name='create_payment_in'),
+    
+    
 ]

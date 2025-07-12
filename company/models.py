@@ -26,17 +26,32 @@ class Company(models.Model):
 
 
 class Client(models.Model):
-    id = models.AutoField(primary_key=True)
-    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="clients")
+    CLIENT_TYPE_CHOICES = [
+        ('customer', 'Customer'),
+        ('supplier', 'Supplier'),
+    ]
+    client_type = models.CharField(max_length=10, choices=CLIENT_TYPE_CHOICES,)
     client_name = models.CharField(max_length=255)
-    address = models.TextField()
-    gst = models.CharField(max_length=15, null=True, blank=True)
-    phone_no = models.CharField(max_length=15)
+    mobile_number = models.CharField(max_length=15)
+    email = models.EmailField()
+    gstin = models.CharField(max_length=20, blank=True, null=True)
+    pan = models.CharField(max_length=20, blank=True, null=True)
+    state = models.CharField(max_length=50)
+    billing_address = models.TextField()
+    billing_address_line2 = models.CharField(max_length=100, blank=True, null=True)
+    shipping_address = models.TextField(blank=True, null=True)
+    pincode_special_economic_zone = models.BooleanField(default=False)
+    city = models.CharField(max_length=50, blank=True, null=True)
+    credit_period = models.PositiveIntegerField(default=0, help_text="Days")
+    credit_limit = models.FloatField(default=0.0)#Caps how much business you allow on credit to the client
+    opening_balance = models.FloatField(default=0.0)#	Reflects old dues at the start of the system 
+    other_currency = models.BooleanField(default=False)
+    check_discount = models.BooleanField(default=False)
+    enable_multiple_address = models.BooleanField(default=False)
     deleted = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.client_name} - {self.company.company_name} ({self.phone_no})"
-
+        return f"{self.client_name} ({self.client_type})"      
 class Unit(models.Model):
     name = models.CharField(max_length=20, unique=True)  # e.g., 'kg'
     label = models.CharField(max_length=50)              # e.g., 'Kilogram'
@@ -90,17 +105,40 @@ class Item(models.Model):
 
         
 #sales and pruchase invoice model
+class PaymentStatus(models.Model):
+    code = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=50)
 
+    def __str__(self):
+        return self.label
+
+class PaymentType(models.Model):
+    code = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.label
+
+class PaymentMode(models.Model):
+    code = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.label
 class SalesInvoice(models.Model):
     company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name='invoices')
     client = models.ForeignKey(Client, on_delete=models.DO_NOTHING, related_name='invoices')
     invoice_number = models.CharField(max_length=100, unique=True)
     invoice_date = models.DateField(auto_now_add=True)
-
     final_discount_applicable = models.BooleanField(default=False)
-    final_discount = models.FloatField(default=0.0)  # percentage
+    final_discount = models.FloatField(default=0.0)
     total_price = models.FloatField(default=0.0)
     deleted = models.BooleanField(default=False)
+    total_price = models.FloatField(default=0.0)
+    received_amt = models.FloatField(default=0.0)
+    payment_status = models.ForeignKey(PaymentStatus, on_delete=models.PROTECT)
+    payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT)
+    payment_mode = models.ForeignKey(PaymentMode, on_delete=models.PROTECT)
 
     def calculate_subtotal(self):
         return sum(item.line_total for item in self.items.all())
@@ -121,7 +159,7 @@ class SalesInvoiceItem(models.Model):
     invoice = models.ForeignKey(SalesInvoice, related_name='items', on_delete=models.DO_NOTHING)
     item = models.ForeignKey(Item, on_delete=models.DO_NOTHING)
     quantity = models.PositiveIntegerField()
-
+    
     discount_applicable = models.BooleanField(default=False)
     discount = models.FloatField(default=0.0)  # percentage
     line_total = models.FloatField(default=0.0)
@@ -144,7 +182,11 @@ class PurchaseInvoice(models.Model):
     invoice_date = models.DateField(auto_now_add=True)
     total_price = models.FloatField(default=0.0)
     deleted = models.BooleanField(default=False)
-
+    total_price = models.FloatField(default=0.0)
+    paid_amt = models.FloatField(default=0.0)
+    payment_status = models.ForeignKey(PaymentStatus, on_delete=models.PROTECT)
+    payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT)
+    payment_mode = models.ForeignKey(PaymentMode, on_delete=models.PROTECT)
 
 class PurchaseInvoiceItem(models.Model):
     invoice = models.ForeignKey(PurchaseInvoice, related_name='items', on_delete=models.DO_NOTHING)
@@ -154,3 +196,40 @@ class PurchaseInvoiceItem(models.Model):
     cost_price = models.FloatField(help_text="Unit purchase price (cost)")
     line_total = models.FloatField(blank=True, default=0.0)
     deleted = models.BooleanField(default=False)
+
+class Bank(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="banks")
+    bank_name = models.CharField(max_length=100)
+    account_holder_name = models.CharField(max_length=100)
+    account_no = models.CharField(max_length=30)
+    ifsc_code = models.CharField(max_length=20)
+    address = models.TextField()
+    branch = models.CharField(max_length=100)
+    ad_code = models.CharField(max_length=20, blank=True, null=True)
+    swift_code = models.CharField(max_length=20, blank=True, null=True)
+    opening_balance = models.FloatField(default=0.0)
+    as_on = models.DateField()
+
+    def __str__(self):
+        return f"{self.bank_name} ({self.account_no})"
+class BankTransaction(models.Model):
+    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name="transactions")
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="bank_transactions")
+    date = models.DateField(auto_now_add=True)
+    amount = models.FloatField()
+    TRANSACTION_TYPE_CHOICES = [
+        ('credit', 'Credit'),
+        ('debit', 'Debit'),
+    ]
+    transaction_type = models.CharField(max_length=6, choices=TRANSACTION_TYPE_CHOICES)
+    description = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Update bank balance
+        if self.transaction_type == 'credit':
+            self.bank.opening_balance += self.amount
+        else:
+            self.bank.opening_balance -= self.amount
+        self.bank.save()
+
