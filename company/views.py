@@ -369,18 +369,34 @@ class CreateSalesInvoiceView(APIView):
         data = serializer.validated_data
         items_data = request.data.get("items", [])
 
+        # Additional required fields
+        payment_mode_id = request.data.get("payment_mode")
+        payment_status_id = request.data.get("payment_status")
+        payment_type_id = request.data.get("payment_type")
+        received_amt = request.data.get("received_amt", 0.0)
+
+        if not all([payment_mode_id, payment_status_id, payment_type_id]):
+            return Response({"error": "Missing payment_mode, payment_status, or payment_type"}, status=400)
+
         try:
             with transaction.atomic():
+                payment_mode = PaymentMode.objects.get(id=payment_mode_id)
+                payment_status = PaymentStatus.objects.get(id=payment_status_id)
+                payment_type = PaymentType.objects.get(id=payment_type_id)
+
                 invoice = SalesInvoice.objects.create(
                     company=data["company"],
                     client=data["client"],
                     invoice_number=data["invoice_number"],
                     final_discount_applicable=data.get("final_discount_applicable", False),
-                    final_discount=data.get("final_discount", 0)
+                    final_discount=data.get("final_discount", 0),
+                    payment_mode=payment_mode,
+                    payment_status=payment_status,
+                    payment_type=payment_type,
+                    received_amt=received_amt,
                 )
 
                 subtotal = 0
-
                 for item_data in items_data:
                     item_id = item_data.get("item")
                     quantity = item_data.get("quantity")
@@ -398,11 +414,9 @@ class CreateSalesInvoiceView(APIView):
                             f"Available: {item.quantity}, Requested: {quantity}"
                         )
 
-                    # Deduct quantity
                     item.quantity -= quantity
                     item.save()
 
-                    # Calculate line total
                     selling_price = item.selling_price or 0
                     line_total = quantity * selling_price
                     if discount_applicable and discount > 0:
@@ -427,6 +441,7 @@ class CreateSalesInvoiceView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+
 
 
 

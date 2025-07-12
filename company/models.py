@@ -3,6 +3,12 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 # Create your models here.
 
+
+
+# for payment mode 0- check,1-cash,2-bank transfer
+# for payment Status 0-unpaid,1-Paid,2-partially paid
+# for payment type 0-Advance,1-Against invoice,2-on account
+# for unit 1-litre,2-Box,3-Meter,4-Piece
 class Owner(models.Model):
     user = models.OneToOneField(User, on_delete=models.DO_NOTHING, related_name="owner_profile")
     phone_no = models.CharField(max_length=15)
