@@ -209,7 +209,7 @@ class Bank(models.Model):
     swift_code = models.CharField(max_length=20, blank=True, null=True)
     opening_balance = models.FloatField(default=0.0)
     as_on = models.DateField()
-
+#test
     def __str__(self):
         return f"{self.bank_name} ({self.account_no})"
 class BankTransaction(models.Model):
