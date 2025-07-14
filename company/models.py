@@ -223,3 +223,18 @@ class BankTransaction(models.Model):
         else:
             self.bank.opening_balance -= self.amount
         self.bank.save()
+
+class CashLedger(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="cash_ledgers")
+    date = models.DateField(auto_now_add=True)
+    amount = models.FloatField(validators=[ValidatePositiveAmount(field_name="Amount")])
+    
+    TRANSACTION_TYPE_CHOICES = [
+        ('inflow', 'Inflow'),
+        ('outflow', 'Outflow'),
+    ]
+    transaction_type = models.CharField(max_length=7, choices=TRANSACTION_TYPE_CHOICES)
+    description = models.TextField(blank=True, null=True, validators=[ValidateIfPresentNotEmpty(field_name="Description")])
+
+    def __str__(self):
+        return f"{self.date} - {self.transaction_type} - {self.amount}"
