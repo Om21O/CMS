@@ -1103,3 +1103,104 @@ class UpdateItemView(APIView):
             serializer.save()
             return Response({"status": 200, "message": "Item updated successfully", "data": serializer.data})
         return Response({"status": 400, "errors": serializer.errors})
+    
+class CashInView(APIView):
+    def post(self, request):
+        data = request.data
+        amount = float(data.get('amount'))
+        invoice_ids = data.get('invoice_ids', [])
+        company_id = data.get('company_id')
+
+        if not amount or not invoice_ids or not company_id:
+            return Response({"error": "amount, invoice_ids, and company_id are required."}, status=400)
+
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Company not found."}, status=404)
+
+        with transaction.atomic():
+            for invoice_id in invoice_ids:
+                try:
+                    invoice = SalesInvoice.objects.select_for_update().get(id=invoice_id)
+                except SalesInvoice.DoesNotExist:
+                    continue
+
+                remaining = invoice.total_price - invoice.received_amt
+                if remaining <= 0:
+                    continue
+
+                if amount >= remaining:
+                    invoice.received_amt += remaining
+                    invoice.payment_status_id = 3  # Fully paid
+                    amount -= remaining
+                else:
+                    invoice.received_amt += amount
+                    invoice.payment_status_id = 2  # Partially paid
+                    amount = 0
+
+                invoice.save(update_fields=['received_amt', 'payment_status'])
+
+                if amount <= 0:
+                    break
+
+            # Log in CashLedger
+            CashLedger.objects.create(
+                company=company,
+                amount=data['amount'],
+                transaction_type='inflow',
+                description=f"Cash received for invoices: {invoice_ids}"
+            )
+
+        return Response({"status": 200, "message": "Cash payment recorded successfully."})
+
+class CashOutView(APIView):
+    def post(self, request):
+        data = request.data
+        amount = float(data.get('amount'))
+        invoice_ids = data.get('invoice_ids', [])
+        company_id = data.get('company_id')
+
+        if not amount or not invoice_ids or not company_id:
+            return Response({"error": "amount, invoice_ids, and company_id are required."}, status=400)
+
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Company not found."}, status=404)
+
+        with transaction.atomic():
+            for invoice_id in invoice_ids:
+                try:
+                    invoice = PurchaseInvoice.objects.select_for_update().get(id=invoice_id)
+                except PurchaseInvoice.DoesNotExist:
+                    continue
+
+                remaining = invoice.total_price - invoice.paid_amt
+                if remaining <= 0:
+                    continue
+
+                if amount >= remaining:
+                    invoice.paid_amt += remaining
+                    invoice.payment_status_id = 3  # Fully paid
+                    amount -= remaining
+                else:
+                    invoice.paid_amt += amount
+                    invoice.payment_status_id = 2  # Partially paid
+                    amount = 0
+
+                invoice.save(update_fields=['paid_amt', 'payment_status'])
+
+                if amount <= 0:
+                    break
+
+            # Log in CashLedger
+            CashLedger.objects.create(
+                company=company,
+                amount=data['amount'],
+                transaction_type='outflow',
+                description=f"Cash paid for purchase invoices: {invoice_ids}"
+            )
+
+        return Response({"status": 200, "message": "Cash payment applied successfully."})
+
