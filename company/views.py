@@ -1017,3 +1017,89 @@ class PaymentOutView(APIView):
             )
 
         return Response({"status": 200, "message": "Payment applied and bank debited successfully."})
+    
+# OWNER VIEWS
+class UpdateOwnerView(APIView):
+    def put(self, request, pk):
+        try:
+            owner = Owner.objects.get(pk=pk, deleted=False)
+        except Owner.DoesNotExist:
+            return Response({"status": 404, "message": "Owner not found"})
+
+        serializer = OwnerSerializer(owner, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Owner updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteOwnerView(APIView):
+    def delete(self, request, pk):
+        try:
+            owner = Owner.objects.get(pk=pk, deleted=False)
+        except Owner.DoesNotExist:
+            return Response({"status": 404, "message": "Owner not found"})
+
+        owner.deleted = True
+        owner.save()
+        return Response({"status": 200, "message": "Owner soft deleted successfully"})
+    
+class UpdateCompanyView(APIView):
+    def put(self, request, pk):
+        try:
+            company = Company.objects.get(pk=pk, deleted=False)
+        except Company.DoesNotExist:
+            return Response({"status": 404, "message": "Company not found"})
+
+        serializer = CompanySerializer(company, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Company updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteCompanyView(APIView):
+    def delete(self, request, pk):
+        try:
+            company = Company.objects.get(pk=pk, deleted=False)
+        except Company.DoesNotExist:
+            return Response({"status": 404, "message": "Company not found"})
+
+        company.deleted = True
+        company.save()
+        return Response({"status": 200, "message": "Company soft deleted successfully"})
+    
+class UpdateClientView(APIView):
+    def put(self, request, pk):
+        try:
+            client = Client.objects.get(pk=pk, deleted=False)
+        except Client.DoesNotExist:
+            return Response({"status": 404, "message": "Client not found"})
+
+        serializer = ClientSerializer(client, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Client updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteClientView(APIView):
+    def delete(self, request, pk):
+        try:
+            client = Client.objects.get(pk=pk, deleted=False)
+        except Client.DoesNotExist:
+            return Response({"status": 404, "message": "Client not found"})
+
+        client.deleted = True
+        client.save()
+        return Response({"status": 200, "message": "Client soft deleted successfully"})
+
+class UpdateItemView(APIView):
+    def put(self, request, pk):
+        try:
+            item = Item.objects.get(pk=pk, deleted=False)
+        except Item.DoesNotExist:
+            return Response({"status": 404, "message": "Item not found"})
+
+        serializer = ItemSerializer(item, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Item updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
