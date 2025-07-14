@@ -455,8 +455,13 @@ class CreatePurchaseInvoiceView(APIView):
         invoice_number = data.get('invoice_number')
         items = data.get('items', [])
 
-        if not all([company_id, supplier_name, invoice_number, items]):
-            return Response({"error": "All invoice fields and at least one item are required"}, status=400)
+        payment_mode_id = data.get('payment_mode')
+        payment_status_id = data.get('payment_status')
+        payment_type_id = data.get('payment_type')
+        paid_amt = data.get('paid_amt', 0.0)
+
+        if not all([company_id, supplier_name, invoice_number, items, payment_mode_id, payment_status_id, payment_type_id]):
+            return Response({"error": "Missing required fields including payment fields or items"}, status=400)
 
         try:
             company = Company.objects.get(id=company_id)
@@ -466,11 +471,21 @@ class CreatePurchaseInvoiceView(APIView):
         if PurchaseInvoice.objects.filter(invoice_number=invoice_number).exists():
             return Response({"error": "Invoice number must be unique"}, status=400)
 
-        # Create the invoice
+        try:
+            payment_mode = PaymentMode.objects.get(id=payment_mode_id)
+            payment_status = PaymentStatus.objects.get(id=payment_status_id)
+            payment_type = PaymentType.objects.get(id=payment_type_id)
+        except Exception as e:
+            return Response({"error": f"Invalid payment field: {str(e)}"}, status=404)
+
         invoice = PurchaseInvoice.objects.create(
             company=company,
             supplier_name=supplier_name,
             invoice_number=invoice_number,
+            payment_mode=payment_mode,
+            payment_status=payment_status,
+            payment_type=payment_type,
+            paid_amt=paid_amt
         )
 
         total_price = 0
@@ -481,60 +496,56 @@ class CreatePurchaseInvoiceView(APIView):
             quantity = item_data.get('quantity')
             cost_price = item_data.get('cost_price')
 
-    # 🔴 Check for missing fields
-        if not item_name:
-            invoice.delete()
-            return Response({"error": "Item name is required."}, status=400)
+            if not item_name:
+                invoice.delete()
+                return Response({"error": "Item name is required."}, status=400)
 
-        if not unit_id:
-            invoice.delete()
-            return Response({"error": f"Unit is required for item '{item_name or 'Unnamed'}'."}, status=400)
+            if not unit_id:
+                invoice.delete()
+                return Response({"error": f"Unit is required for item '{item_name or 'Unnamed'}'."}, status=400)
 
-        if not quantity:
-            invoice.delete()
-            return Response({"error": f"Quantity is required for item '{item_name or 'Unnamed'}'."}, status=400)
+            if not quantity:
+                invoice.delete()
+                return Response({"error": f"Quantity is required for item '{item_name or 'Unnamed'}'."}, status=400)
 
-        if not cost_price:
-            invoice.delete()
-            return Response({"error": f"Cost price is required for item '{item_name or 'Unnamed'}'."}, status=400)
+            if not cost_price:
+                invoice.delete()
+                return Response({"error": f"Cost price is required for item '{item_name or 'Unnamed'}'."}, status=400)
 
-    # 🔴 Check if Unit ID is valid
-        try:
-            unit = Unit.objects.get(id=unit_id)
-        except Unit.DoesNotExist:
-            invoice.delete()
-            return Response({"error": f"Invalid unit ID '{unit_id}' for item '{item_name}'."}, status=404)
+            try:
+                unit = Unit.objects.get(id=unit_id)
+            except Unit.DoesNotExist:
+                invoice.delete()
+                return Response({"error": f"Invalid unit ID '{unit_id}' for item '{item_name}'."}, status=404)
 
-            # Calculate line total
-        line_total = round(quantity * cost_price, 2)
-        total_price += line_total
+            line_total = round(quantity * cost_price, 2)
+            total_price += line_total
 
-        # Handle item creation/update in Item table
-        existing_items = Item.objects.filter(item_name=item_name, company=company)
-        matched_item = None
-        for item in existing_items:
-            if round(item.price, 2) == round(cost_price, 2):
-                matched_item = item
-                break
+            existing_items = Item.objects.filter(item_name=item_name, company=company)
+            matched_item = None
+            for item in existing_items:
+                if round(item.price, 2) == round(cost_price, 2):
+                    matched_item = item
+                    break
 
-        if matched_item:
-            matched_item.quantity += quantity
-            matched_item.save()
-        else:
-            Item.objects.create(
-                company=company,
-                item_name=item_name,
-                item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
-                quantity=quantity,
-                unit=unit,
-                description="Auto-created from Purchase Invoice",
-                tax_type=None,
-                tax=None,
-                price=cost_price,
-                selling_price=round(cost_price * 1.1, 2)
+            if matched_item:
+                matched_item.quantity += quantity
+                matched_item.save()
+            else:
+                Item.objects.create(
+                    company=company,
+                    item_name=item_name,
+                    item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
+                    quantity=quantity,
+                    unit=unit,
+                    description="Auto-created from Purchase Invoice",
+                    tax_type=None,
+                    tax=None,
+                    price=cost_price,
+                    selling_price=round(cost_price * 1.1, 2)
                 )
 
-        PurchaseInvoiceItem.objects.create(
+            PurchaseInvoiceItem.objects.create(
                 invoice=invoice,
                 item_name=item_name,
                 unit=unit,
@@ -552,76 +563,6 @@ class CreatePurchaseInvoiceView(APIView):
             "total_price": invoice.total_price
         }, status=201)
 
-class UpdateOwnerView(APIView):
-    #permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def put(self, request, pk):
-        owner = get_object_or_404(Owner, pk=pk)
-        serializer = OwnerSerializer(owner, data=request.data, partial=True)
-        if  serializer.is_valid():
-            serializer.save()
-            return Response({"msg": "Owner updated successfully", "data": serializer.data, "status": 200})
-        return Response({"error": serializer.errors, "status": 400}, status=400)
-
-class DeleteOwnerView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def delete(self, request, pk):
-        owner = get_object_or_404(Owner, pk=pk)
-        owner.delete()
-        return Response({"msg": "Owner deleted", "status": 200})
-
-# ------------------ COMPANY UPDATE & DELETE ------------------
-class UpdateCompanyView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def put(self, request, pk):
-        company = get_object_or_404(Company, pk=pk)
-        serializer = CompanySerializer(company, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"msg": "Company updated successfully", "data": serializer.data, "status": 200})
-        return Response({"error": serializer.errors, "status": 400}, status=400)
-
-class DeleteCompanyView(APIView):
-    #permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def delete(self, request, pk):
-        company = get_object_or_404(Company, pk=pk)
-        company.delete()
-        return Response({"msg": "Company deleted", "status": 200})
-
-# ------------------ CLIENT UPDATE & DELETE ------------------
-class UpdateClientView(APIView):
-    #permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def put(self, request, pk):
-        client = get_object_or_404(Client, pk=pk)
-        serializer = ClientSerializer(client, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"msg": "Client updated successfully", "data": serializer.data, "status": 200})
-        return Response({"error": serializer.errors, "status": 400}, status=400)
-
-class DeleteClientView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def delete(self, request, pk):
-        client = get_object_or_404(Client, pk=pk)
-        client.delete()
-        return Response({"msg": "Client deleted", "status": 200})
-
-# ------------------ ITEM UPDATE & DELETE ------------------
-class UpdateItemView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def put(self, request, pk):
-        item = get_object_or_404(Item, pk=pk)
-        serializer = ItemSerializer(item, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"msg": "Item updated successfully", "data": serializer.data, "status": 200})
-        return Response({"error": serializer.errors, "status": 400}, status=400)
 
 class DeleteItemView(APIView):
    # permission_classes = [AllowAny]
