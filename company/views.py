@@ -19,17 +19,12 @@ from django.contrib.auth import authenticate
 from rest_framework import permissions
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
-# from drf_yasg.views import get_schema_view
-# from drf_yasg import openapi
-# Create your views here.
+
+#+=========================================================================================================================
+#============================                   LOGIN                              ======================================================================
+#======================================================================================================== 
 
 
-# schema_view = get_schema_view(
-#     openapi.Info(title="My API", default_version='v1'),
-#     public=True,
-#     permission_classes=[AllowAny],  # Optional
-# )
-# from drf_yasg.utils import swagger_auto_schema
 
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Allow any user to access this view
@@ -57,6 +52,13 @@ class LoginView(APIView):
             return Response({"error": "Invalid credentials", "status": 400})
 
 
+
+#+=========================================================================================================================
+#============================                   LOGINOUT                             ======================================================================
+#======================================================================================================== 
+
+
+
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -74,6 +76,9 @@ class LogoutView(APIView):
             return Response({"error": str(e), "status": 400})
 
 
+#+=========================================================================================================================
+#============================               OWNER                              ======================================================================
+#======================================================================================================== 
 
 
 class CreateOwnerView(APIView):
@@ -139,8 +144,58 @@ class OwnerDetailView(APIView):
         serializer = OwnerSerializer(owner)
         return Response({"info":serializer.data, "status":200})
     
+class ListOwnersView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request):
+        owners = Owner.objects.filter(deleted=False)
+        serializer = OwnerSerializer(owners, many=True)
+        return Response(serializer.data, status=200)
 
-# ------------------ COMPANY CREATE ------------------
+class RetrieveOwnerView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request, pk):
+        owner = get_object_or_404(Owner, pk=pk,deleted=False)
+        serializer = OwnerSerializer(owner)
+        return Response(serializer.data, status=200)
+
+class UpdateOwnerView(APIView):
+    def put(self, request, pk):
+        try:
+            owner = Owner.objects.get(pk=pk, deleted=False)
+        except Owner.DoesNotExist:
+            return Response({"status": 404, "message": "Owner not found"})
+
+        serializer = OwnerSerializer(owner, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Owner updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteOwnerView(APIView):
+    def delete(self, request, pk):
+        try:
+            owner = Owner.objects.get(pk=pk, deleted=False)
+        except Owner.DoesNotExist:
+            return Response({"status": 404, "message": "Owner not found"})
+
+        owner.deleted = True
+        owner.save()
+        return Response({"status": 200, "message": "Owner soft deleted successfully"})
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================               COMPANY                              ======================================================================
+#======================================================================================================== 
+
+
+
+
 class CreateCompanyView(APIView):
     permission_classes = [AllowAny]
 
@@ -229,7 +284,63 @@ class CreateCompanyView(APIView):
         except Exception as e:
             return Response({"error": str(e), "status": 500})
 
-# ------------------ CLIENT CREATE ------------------
+class ListCompaniesView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request):
+        companies = Company.objects.filter(deleted=False)
+        serializer = CompanySerializer(companies, many=True)
+        return Response(serializer.data, status=200)
+
+class RetrieveCompanyView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny] 
+    def get(self, request, pk):    
+        company = get_object_or_404(Company, pk=pk,deleted=False)
+        serializer = CompanySerializer(company)
+        return Response(serializer.data, status=200)
+
+class UpdateCompanyView(APIView):
+    def put(self, request, pk):
+        try:
+            company = Company.objects.get(pk=pk, deleted=False)
+        except Company.DoesNotExist:
+            return Response({"status": 404, "message": "Company not found"})
+
+        serializer = CompanySerializer(company, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Company updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteCompanyView(APIView):
+    def delete(self, request, pk):
+        try:
+            company = Company.objects.get(pk=pk, deleted=False)
+        except Company.DoesNotExist:
+            return Response({"status": 404, "message": "Company not found"})
+
+        company.deleted = True
+        company.save()
+        return Response({"status": 200, "message": "Company soft deleted successfully"})
+
+
+
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================               CLIENT                              ======================================================================
+#======================================================================================================== 
+
+
+
+
+
+
 class CreateClientView(APIView):
     permission_classes = [AllowAny]
 
@@ -269,9 +380,64 @@ class CreateClientView(APIView):
         except Exception as e:
             return Response({"error": str(e), "status": 500}, status=500)
 
-           
+class RetrieveClientView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request, pk):
+        client = get_object_or_404(Client, pk=pk,deleted=False)
+        serializer = ClientSerializer(client)
+        return Response(serializer.data, status=200)        
 
-# ------------------ ITEM CREATE ------------------
+class ListClientsView(APIView):
+  #  permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request):
+        clients = Client.objects.filter(deleted=False)
+        serializer = ClientSerializer(clients, many=True)
+        return Response(serializer.data, status=200)
+
+class UpdateClientView(APIView):
+    def put(self, request, pk):
+        try:
+            client = Client.objects.get(pk=pk, deleted=False)
+        except Client.DoesNotExist:
+            return Response({"status": 404, "message": "Client not found"})
+
+        serializer = ClientSerializer(client, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Client updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteClientView(APIView):
+    def delete(self, request, pk):
+        try:
+            client = Client.objects.get(pk=pk, deleted=False)
+        except Client.DoesNotExist:
+            return Response({"status": 404, "message": "Client not found"})
+
+        client.deleted = True
+        client.save()
+        return Response({"status": 200, "message": "Client soft deleted successfully"})
+
+
+
+
+
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================               ITEMS                              ======================================================================
+#======================================================================================================== 
+
+
+
+
+
 class CreateItemView(APIView):
     permission_classes = [AllowAny]
 
@@ -367,7 +533,57 @@ class CreateItemView(APIView):
 
         except Exception as e:
             return Response({"error": str(e), "status": 500}, status=500)
-# ------------------ INVOICE CREATE ------------------
+
+class ListItemsView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request):
+        items = Item.objects.filter(deleted=False)
+        serializer = ItemSerializer(items, many=True)
+        return Response(serializer.data, status=200)
+
+class RetrieveItemView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def get(self, request, pk):
+        item = get_object_or_404(Item, pk=pk,deleted=False)
+        serializer = ItemSerializer(item)
+        return Response(serializer.data, status=200)
+
+class UpdateItemView(APIView):
+    def put(self, request, pk):
+        try:
+            item = Item.objects.get(pk=pk, deleted=False)
+        except Item.DoesNotExist:
+            return Response({"status": 404, "message": "Item not found"})
+
+        serializer = ItemSerializer(item, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": 200, "message": "Item updated successfully", "data": serializer.data})
+        return Response({"status": 400, "errors": serializer.errors})
+
+class DeleteItemView(APIView):
+   # permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
+    def delete(self, request, pk):
+        item = get_object_or_404(Item, pk=pk)
+        item.delete()
+        return Response({"msg": "Item deleted", "status": 200})
+
+
+
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================               SALES_INVOICE                              ======================================================================
+#======================================================================================================== 
+
+
 class CreateSalesInvoiceView(APIView):
     permission_classes = [AllowAny]
 
@@ -451,6 +667,124 @@ class CreateSalesInvoiceView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+
+class ListSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        invoices = SalesInvoice.objects.filter(deleted=False)
+        serializer = SalesInvoiceSerializer(invoices, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class SoftDeleteSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def delete(self, request, pk):
+        try:
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+            items = invoice.items.all()
+
+            for item_entry in items:
+                item = item_entry.item
+                item.quantity += item_entry.quantity
+                item.save()
+
+            invoice.deleted = True  # ✅ fix field name
+            invoice.save(update_fields=['deleted'])
+
+            return Response({"detail": "Invoice soft-deleted"}, status=status.HTTP_200_OK)
+
+        except SalesInvoice.DoesNotExist:
+            return Response({"error": "Invoice not found or already deleted"}, status=status.HTTP_404_NOT_FOUND)
+
+class RetrieveSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+            serializer = SalesInvoiceSerializer(invoice)
+            return Response(serializer.data, status=200)
+        except SalesInvoice.DoesNotExist:
+            return Response({"error": "Sales invoice not found"}, status=404)
+
+class UpdateSalesInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def put(self, request, pk):
+        try:
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+        except SalesInvoice.DoesNotExist:
+            return Response({"error": "Sales invoice not found"}, status=404)
+
+        # Exclude current invoice from unique check
+        invoice_number = request.data.get("invoice_number")
+        if invoice_number and SalesInvoice.objects.exclude(pk=pk).filter(invoice_number=invoice_number).exists():
+            return Response({"invoice_number": ["sales invoice with this invoice number already exists."]}, status=400)
+
+        serializer = SalesInvoiceSerializer(invoice, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        items_data = request.data.get("items", [])
+        try:
+            with transaction.atomic():
+                # Restore stock for old items
+                for item_entry in invoice.items.all():
+                    item = item_entry.item
+                    item.quantity += item_entry.quantity
+                    item.save()
+                invoice.items.all().delete()
+
+                subtotal = 0   
+                for item_data in items_data:
+                    item_id = item_data.get("item")
+                    quantity = item_data.get("quantity")
+                    discount_applicable = item_data.get("discount_applicable", False)
+                    discount = item_data.get("discount", 0)
+
+                    if not all([item_id, quantity]):
+                        raise ValidationError("Item ID and quantity are required")
+
+                    item = Item.objects.get(id=item_id)
+                    if item.quantity < quantity:
+                        raise ValidationError(
+                            f"Not enough stock for item: {item.item_name}. "
+                            f"Available: {item.quantity}, Requested: {quantity}"
+                        )
+                    item.quantity -= quantity
+                    item.save()
+
+                    selling_price = item.selling_price or 0
+                    line_total = quantity * selling_price
+                    if discount_applicable and discount > 0:
+                        line_total -= line_total * (discount / 100)
+                    line_total = round(line_total, 2)
+                    subtotal += line_total
+
+                    SalesInvoiceItem.objects.create(
+                        invoice=invoice,
+                        item=item,
+                        quantity=quantity,
+                        discount_applicable=discount_applicable,
+                        discount=discount,
+                        line_total=line_total
+                    )
+
+                serializer.save(total_price=invoice.apply_final_discount(subtotal))
+                return Response(SalesInvoiceSerializer(invoice).data, status=200)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================             PURCHASE_INVOICE                              ======================================================================
+#======================================================================================================== 
 
 
 
@@ -579,237 +913,6 @@ class CreatePurchaseInvoiceView(APIView):
         except Exception as e:
             return Response({"error": f"Unexpected error: {str(e)}"}, status=500)
 
-
-class DeleteItemView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def delete(self, request, pk):
-        item = get_object_or_404(Item, pk=pk)
-        item.delete()
-        return Response({"msg": "Item deleted", "status": 200})
-
-# ------------------ INVOICE UPDATE & DELETE ------------------
-class ListSalesInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        invoices = SalesInvoice.objects.filter(deleted=False)
-        serializer = SalesInvoiceSerializer(invoices, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-class ListPurchaseInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        invoices = PurchaseInvoice.objects.filter(deleted=False)
-        serializer = PurchaseInvoiceSerializer(invoices, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-class SoftDeleteSalesInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def delete(self, request, pk):
-        try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
-            items = invoice.items.all()
-
-            for item_entry in items:
-                item = item_entry.item
-                item.quantity += item_entry.quantity
-                item.save()
-
-            invoice.deleted = True  # ✅ fix field name
-            invoice.save(update_fields=['deleted'])
-
-            return Response({"detail": "Invoice soft-deleted"}, status=status.HTTP_200_OK)
-
-        except SalesInvoice.DoesNotExist:
-            return Response({"error": "Invoice not found or already deleted"}, status=status.HTTP_404_NOT_FOUND)
-
-class DeletePurchaseInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def delete(self, request, pk):
-        try:
-            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
-            items = invoice.items.all()
-
-            for pi_item in items:
-                from company.models import Item
-                matching_items = Item.objects.filter(
-                    item_name=pi_item.item_name,
-                    company=invoice.company,
-                    unit=pi_item.unit
-                )
-                for item in matching_items:
-                    item.quantity -= pi_item.quantity
-                    item.quantity = max(0, item.quantity)
-                    item.save()
-
-            invoice.deleted = True
-            invoice.save(update_fields=['deleted'])
-
-            return Response({"detail": "Purchase invoice soft-deleted"}, status=status.HTTP_200_OK)
-
-        except PurchaseInvoice.DoesNotExist:
-            return Response({"error": "Invoice not found or already deleted"}, status=status.HTTP_404_NOT_FOUND)
-
-
-# ------------------ LIST & RETRIEVE VIEWS ------------------
-
-class ListOwnersView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request):
-        owners = Owner.objects.filter(deleted=False)
-        serializer = OwnerSerializer(owners, many=True)
-        return Response(serializer.data, status=200)
-
-class RetrieveOwnerView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request, pk):
-        owner = get_object_or_404(Owner, pk=pk,deleted=False)
-        serializer = OwnerSerializer(owner)
-        return Response(serializer.data, status=200)
-
-class ListCompaniesView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request):
-        companies = Company.objects.filter(deleted=False)
-        serializer = CompanySerializer(companies, many=True)
-        return Response(serializer.data, status=200)
-
-class RetrieveCompanyView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny] 
-    def get(self, request, pk):
-        company = get_object_or_404(Company, pk=pk,deleted=False)
-        serializer = CompanySerializer(company)
-        return Response(serializer.data, status=200)
-
-class ListClientsView(APIView):
-  #  permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request):
-        clients = Client.objects.filter(deleted=False)
-        serializer = ClientSerializer(clients, many=True)
-        return Response(serializer.data, status=200)
-
-class RetrieveClientView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request, pk):
-        client = get_object_or_404(Client, pk=pk,deleted=False)
-        serializer = ClientSerializer(client)
-        return Response(serializer.data, status=200)
-
-class ListItemsView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request):
-        items = Item.objects.filter(deleted=False)
-        serializer = ItemSerializer(items, many=True)
-        return Response(serializer.data, status=200)
-
-class RetrieveItemView(APIView):
-   # permission_classes = [AllowAny]
-    permission_classes = [AllowAny]
-    def get(self, request, pk):
-        item = get_object_or_404(Item, pk=pk,deleted=False)
-        serializer = ItemSerializer(item)
-        return Response(serializer.data, status=200)
-class RetrieveSalesInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request, pk):
-        try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
-            serializer = SalesInvoiceSerializer(invoice)
-            return Response(serializer.data, status=200)
-        except SalesInvoice.DoesNotExist:
-            return Response({"error": "Sales invoice not found"}, status=404)
-        
-class RetrievePurchaseInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request, pk):
-        try:
-            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
-            serializer = PurchaseInvoiceSerializer(invoice)
-            return Response(serializer.data, status=200)
-        except PurchaseInvoice.DoesNotExist:
-            return Response({"error": "Purchase invoice not found"}, status=404)
-
-class UpdateSalesInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def put(self, request, pk):
-        try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
-        except SalesInvoice.DoesNotExist:
-            return Response({"error": "Sales invoice not found"}, status=404)
-
-        # Exclude current invoice from unique check
-        invoice_number = request.data.get("invoice_number")
-        if invoice_number and SalesInvoice.objects.exclude(pk=pk).filter(invoice_number=invoice_number).exists():
-            return Response({"invoice_number": ["sales invoice with this invoice number already exists."]}, status=400)
-
-        serializer = SalesInvoiceSerializer(invoice, data=request.data, partial=True)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=400)
-
-        items_data = request.data.get("items", [])
-        try:
-            with transaction.atomic():
-                # Restore stock for old items
-                for item_entry in invoice.items.all():
-                    item = item_entry.item
-                    item.quantity += item_entry.quantity
-                    item.save()
-                invoice.items.all().delete()
-
-                subtotal = 0   
-                for item_data in items_data:
-                    item_id = item_data.get("item")
-                    quantity = item_data.get("quantity")
-                    discount_applicable = item_data.get("discount_applicable", False)
-                    discount = item_data.get("discount", 0)
-
-                    if not all([item_id, quantity]):
-                        raise ValidationError("Item ID and quantity are required")
-
-                    item = Item.objects.get(id=item_id)
-                    if item.quantity < quantity:
-                        raise ValidationError(
-                            f"Not enough stock for item: {item.item_name}. "
-                            f"Available: {item.quantity}, Requested: {quantity}"
-                        )
-                    item.quantity -= quantity
-                    item.save()
-
-                    selling_price = item.selling_price or 0
-                    line_total = quantity * selling_price
-                    if discount_applicable and discount > 0:
-                        line_total -= line_total * (discount / 100)
-                    line_total = round(line_total, 2)
-                    subtotal += line_total
-
-                    SalesInvoiceItem.objects.create(
-                        invoice=invoice,
-                        item=item,
-                        quantity=quantity,
-                        discount_applicable=discount_applicable,
-                        discount=discount,
-                        line_total=line_total
-                    )
-
-                serializer.save(total_price=invoice.apply_final_discount(subtotal))
-                return Response(SalesInvoiceSerializer(invoice).data, status=200)
-        except Exception as e:
-            return Response({"error": str(e)}, status=400)
-
 class UpdatePurchaseInvoiceView(APIView):
     permission_classes = [AllowAny]
 
@@ -929,8 +1032,71 @@ class UpdatePurchaseInvoiceView(APIView):
         except ValidationError as ve:
             return Response({"error": str(ve)}, status=400)
         except Exception as e:
-            return Response({"error": str(e)}, status=400) #outstanding,salesreport person ka name number
-        #9322212299
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=500)
+
+class ListPurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        invoices = PurchaseInvoice.objects.filter(deleted=False)
+        serializer = PurchaseInvoiceSerializer(invoices, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class DeletePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def delete(self, request, pk):
+        try:
+            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
+            items = invoice.items.all()
+
+            for pi_item in items:
+                from company.models import Item
+                matching_items = Item.objects.filter(
+                    item_name=pi_item.item_name,
+                    company=invoice.company,
+                    unit=pi_item.unit
+                )
+                for item in matching_items:
+                    item.quantity -= pi_item.quantity
+                    item.quantity = max(0, item.quantity)
+                    item.save()
+
+            invoice.deleted = True
+            invoice.save(update_fields=['deleted'])
+
+            return Response({"detail": "Purchase invoice soft-deleted"}, status=status.HTTP_200_OK)
+
+        except PurchaseInvoice.DoesNotExist:
+            return Response({"error": "Invoice not found or already deleted"}, status=status.HTTP_404_NOT_FOUND)
+
+class RetrievePurchaseInvoiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        try:
+            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
+            serializer = PurchaseInvoiceSerializer(invoice)
+            return Response(serializer.data, status=200)
+        except PurchaseInvoice.DoesNotExist:
+            return Response({"error": "Purchase invoice not found"}, status=404)
+
+
+            return Response({"error": str(e)}, status=400)
+
+
+
+
+
+
+
+#+=========================================================================================================================
+#============================             PAYMENT_IN_OUT                              ======================================================================
+#======================================================================================================== 
+
+
+
+
 class PaymentInView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
@@ -1005,9 +1171,6 @@ class PaymentInView(APIView):
 
         return Response({"status": 200, "message": "Payment applied successfully."})
 
-
-
-
 class PaymentOutView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
@@ -1075,141 +1238,8 @@ class PaymentOutView(APIView):
         return Response({"status": 200, "message": "Payment applied and balance adjusted successfully."})
 
     
-# OWNER VIEWS
-class UpdateOwnerView(APIView):
-    def put(self, request, pk):
-        try:
-            owner = Owner.objects.get(pk=pk, deleted=False)
-        except Owner.DoesNotExist:
-            return Response({"status": 404, "message": "Owner not found"})
 
-        serializer = OwnerSerializer(owner, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"status": 200, "message": "Owner updated successfully", "data": serializer.data})
-        return Response({"status": 400, "errors": serializer.errors})
 
-class DeleteOwnerView(APIView):
-    def delete(self, request, pk):
-        try:
-            owner = Owner.objects.get(pk=pk, deleted=False)
-        except Owner.DoesNotExist:
-            return Response({"status": 404, "message": "Owner not found"})
-
-        owner.deleted = True
-        owner.save()
-        return Response({"status": 200, "message": "Owner soft deleted successfully"})
-    
-class UpdateCompanyView(APIView):
-    def put(self, request, pk):
-        try:
-            company = Company.objects.get(pk=pk, deleted=False)
-        except Company.DoesNotExist:
-            return Response({"status": 404, "message": "Company not found"})
-
-        serializer = CompanySerializer(company, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"status": 200, "message": "Company updated successfully", "data": serializer.data})
-        return Response({"status": 400, "errors": serializer.errors})
-
-class DeleteCompanyView(APIView):
-    def delete(self, request, pk):
-        try:
-            company = Company.objects.get(pk=pk, deleted=False)
-        except Company.DoesNotExist:
-            return Response({"status": 404, "message": "Company not found"})
-
-        company.deleted = True
-        company.save()
-        return Response({"status": 200, "message": "Company soft deleted successfully"})
-    
-class UpdateClientView(APIView):
-    def put(self, request, pk):
-        try:
-            client = Client.objects.get(pk=pk, deleted=False)
-        except Client.DoesNotExist:
-            return Response({"status": 404, "message": "Client not found"})
-
-        serializer = ClientSerializer(client, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"status": 200, "message": "Client updated successfully", "data": serializer.data})
-        return Response({"status": 400, "errors": serializer.errors})
-
-class DeleteClientView(APIView):
-    def delete(self, request, pk):
-        try:
-            client = Client.objects.get(pk=pk, deleted=False)
-        except Client.DoesNotExist:
-            return Response({"status": 404, "message": "Client not found"})
-
-        client.deleted = True
-        client.save()
-        return Response({"status": 200, "message": "Client soft deleted successfully"})
-
-class UpdateItemView(APIView):
-    def put(self, request, pk):
-        try:
-            item = Item.objects.get(pk=pk, deleted=False)
-        except Item.DoesNotExist:
-            return Response({"status": 404, "message": "Item not found"})
-
-        serializer = ItemSerializer(item, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"status": 200, "message": "Item updated successfully", "data": serializer.data})
-        return Response({"status": 400, "errors": serializer.errors})
-    
-class CashInView(APIView):
-    def post(self, request):
-        data = request.data
-        amount = float(data.get('amount'))
-        invoice_ids = data.get('invoice_ids', [])
-        company_id = data.get('company_id')
-
-        if not amount or not invoice_ids or not company_id:
-            return Response({"error": "amount, invoice_ids, and company_id are required."}, status=400)
-
-        try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
-            return Response({"error": "Company not found."}, status=404)
-
-        with transaction.atomic():
-            for invoice_id in invoice_ids:
-                try:
-                    invoice = SalesInvoice.objects.select_for_update().get(id=invoice_id)
-                except SalesInvoice.DoesNotExist:
-                    continue
-
-                remaining = invoice.total_price - invoice.received_amt
-                if remaining <= 0:
-                    continue
-
-                if amount >= remaining:
-                    invoice.received_amt += remaining
-                    invoice.payment_status_id = 3  # Fully paid
-                    amount -= remaining
-                else:
-                    invoice.received_amt += amount
-                    invoice.payment_status_id = 2  # Partially paid
-                    amount = 0
-
-                invoice.save(update_fields=['received_amt', 'payment_status'])
-
-                if amount <= 0:
-                    break
-
-            # Log in CashLedger
-            CashLedger.objects.create(
-                company=company,
-                amount=data['amount'],
-                transaction_type='inflow',
-                description=f"Cash received for invoices: {invoice_ids}"
-            )
-
-        return Response({"status": 200, "message": "Cash payment recorded successfully."})
 
 
 
