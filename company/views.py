@@ -29,6 +29,8 @@ from django.conf import settings
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
+from .permissions import *
+
 
 #+=========================================================================================================================
 #============================                   LOGIN                              ======================================================================
@@ -1251,9 +1253,12 @@ class PaymentOutView(APIView):
 
 #+=========================================================================================================================
 #============================             CREATE_EXCEL                              ======================================================================
-#======================================================================================================== 
+#================================================================================================================= 
+
+
 
 class InvoiceReportExportView(APIView):
+
     permission_classes = [AllowAny]
     def post(self, request):
         company_id = request.data.get('company_id')
@@ -1349,3 +1354,23 @@ class InvoiceReportExportView(APIView):
 
         file_url = f"{request.build_absolute_uri(settings.MEDIA_URL)}{filename}"
         return JsonResponse({"download_url": file_url}, status=200)
+    
+
+
+#+=========================================================================================================================
+#============================             Job Role Creation                              ======================================================================
+#================================================================================================================= 
+
+class CreateJobRoleWithPermissionsView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = JobRoleCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            job_role = serializer.save()
+            return Response({
+                "message": "Job role created successfully.",
+                "job_role_id": job_role.id,
+                "name": job_role.name
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

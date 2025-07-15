@@ -58,6 +58,8 @@ urlpatterns = [
     path('payment-out/create/', PaymentOutView.as_view(), name='create_payment_in'),
 
     path('export-invoice-report/', InvoiceReportExportView.as_view()),
+
+    path('jobrole/create/', CreateJobRoleWithPermissionsView.as_view()),
     
     
 ]

@@ -238,3 +238,49 @@ class CashLedger(models.Model):
 
     def __str__(self):
         return f"{self.date} - {self.transaction_type} - {self.amount}"
+    
+class JobRole(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+    
+class ModulePermission(models.Model):
+    job_role = models.ForeignKey(JobRole, on_delete=models.CASCADE, related_name='permissions')
+    module_name = models.CharField(max_length=100)  # E.g., 'Sales Voucher', 'Inventory'
+    can_view = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('job_role', 'module_name')  # Prevent duplicates
+
+    def __str__(self):
+        return f"{self.job_role.name} - {self.module_name}"
+
+class Employee(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="employee_profile")
+    
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employees")
+    job_role = models.ForeignKey(JobRole, on_delete=models.PROTECT, related_name="employees")
+    phone_number = models.CharField(max_length=10, validators=[ValidatePhoneNumber()])
+    
+    deleted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.job_role.name}"
+    
+class ModulePermission(models.Model):
+    job_role = models.ForeignKey(JobRole, on_delete=models.CASCADE, related_name='permissions')
+    module_name = models.CharField(max_length=100)  # E.g., 'Sales Voucher', 'Inventory'
+    can_view = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('job_role', 'module_name')  # Prevent duplicates
+
+    def __str__(self):
+        return f"{self.job_role.name} - {self.module_name}"

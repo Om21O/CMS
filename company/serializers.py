@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import *
-
+from .constant import *
 
 class OwnerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
@@ -74,3 +74,41 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
         fields = '__all__'
     def get_pending_amount(self, obj):
         return round(obj.total_price - obj.paid_amt, 2)
+
+class EmployeeCreateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username')
+    email = serializers.EmailField(source='user.email')
+    password = serializers.CharField(write_only=True, source='user.password')
+
+    class Meta:
+        model = Employee
+        fields = ['username', 'email', 'password', 'phone_number', 'company', 'job_role']
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        password = user_data.pop('password')
+
+        # Create User with password hashing
+        user = User(**user_data)
+        user.set_password(password)
+        user.save()
+
+        # Create employee
+        employee = Employee.objects.create(user=user, **validated_data)
+        return employee
+
+class ModulePermissionInputSerializer(serializers.Serializer):
+    module_name = serializers.CharField()
+    can_view = serializers.BooleanField()
+    can_create = serializers.BooleanField()
+    can_edit = serializers.BooleanField()
+    can_delete = serializers.BooleanField()
+
+    def validate_module_name(self, value):
+        normalized = value.strip().lower()
+        internal_name = ALIAS_TO_MODULE_MAP.get(normalized)
+        if not internal_name:
+            raise serializers.ValidationError(
+                f"Invalid module alias: '{value}'. Allowed aliases are: {list(ALIAS_TO_MODULE_MAP.keys())}"
+            )
+        return internal_name
