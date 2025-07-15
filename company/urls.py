@@ -43,7 +43,7 @@ urlpatterns = [
     # Sales Invoice URLs
     path('sales-invoice/create/', CreateSalesInvoiceView.as_view(), name='create_sales_invoice'),
     path('sales-invoice/list/', ListSalesInvoiceView.as_view(), name='list_sales_invoice'),
-    path('sales-invoice/delete/<int:pk>/', DeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
+    path('sales-invoice/delete/<int:pk>/', SoftDeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
     path('sales-invoice/update/<int:pk>/', UpdateSalesInvoiceView.as_view(), name='update_sales_invoice'),
     path('sales-invoice/<int:pk>/', RetrieveSalesInvoiceView.as_view(), name='retrieve_sales_invoice'),
 

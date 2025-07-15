@@ -605,12 +605,12 @@ class ListPurchaseInvoiceView(APIView):
         serializer = PurchaseInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class DeleteSalesInvoiceView(APIView):
+class SoftDeleteSalesInvoiceView(APIView):
     permission_classes = [AllowAny]
 
     def delete(self, request, pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk,deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
             items = invoice.items.all()
 
             for item_entry in items:
@@ -618,8 +618,8 @@ class DeleteSalesInvoiceView(APIView):
                 item.quantity += item_entry.quantity
                 item.save()
 
-            invoice.is_deleted = True
-            invoice.save(update_fields=['is_deleted'])
+            invoice.deleted = True  # ✅ fix field name
+            invoice.save(update_fields=['deleted'])
 
             return Response({"detail": "Invoice soft-deleted"}, status=status.HTTP_200_OK)
 
