@@ -128,7 +128,9 @@ class SalesInvoice(models.Model):
     payment_status = models.ForeignKey(PaymentStatus, on_delete=models.PROTECT)
     payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT)
     payment_mode = models.ForeignKey(PaymentMode, on_delete=models.PROTECT)
-
+    @property
+    def pending_amount(self):
+        return round(self.total_price - self.paid_amt, 2)
     def calculate_subtotal(self):
         return sum(item.line_total for item in self.items.all())
 
@@ -176,6 +178,9 @@ class PurchaseInvoice(models.Model):
     payment_status = models.ForeignKey(PaymentStatus, on_delete=models.PROTECT)
     payment_type = models.ForeignKey(PaymentType, on_delete=models.PROTECT)
     payment_mode = models.ForeignKey(PaymentMode, on_delete=models.PROTECT)
+    @property
+    def pending_amount(self):
+        return round(self.total_price - self.paid_amt, 2)
 
 
 class PurchaseInvoiceItem(models.Model):

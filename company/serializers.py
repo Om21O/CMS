@@ -49,18 +49,28 @@ class SalesInvoiceItemSerializer(serializers.ModelSerializer):
 
 class SalesInvoiceSerializer(serializers.ModelSerializer):
     items = SalesInvoiceItemSerializer(many=True, read_only=True)
+    pending_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = SalesInvoice
         fields = '__all__'
+
+    def get_pending_amount(self, obj):
+        total = obj.total_price or 0
+        received = obj.received_amt or 0
+        return round(total - received, 2)
 class PurchaseInvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseInvoiceItem
         fields = '__all__'
+    
 
 class PurchaseInvoiceSerializer(serializers.ModelSerializer):
     items = PurchaseInvoiceItemSerializer(many=True, read_only=True)
-
+    pending_amount = serializers.SerializerMethodField()
+    
     class Meta:
         model = PurchaseInvoice
         fields = '__all__'
+    def get_pending_amount(self, obj):
+        return round(obj.total_price - obj.paid_amt, 2)
