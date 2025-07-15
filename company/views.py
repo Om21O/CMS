@@ -196,6 +196,16 @@ class CreateCompanyView(APIView):
                     address=address,
                     type_of_company=type_of_company
                 )
+                initial_cash = float(data.get("initial_cash", 0.0))  # default to 0.0
+
+                # After creating the company
+                if initial_cash > 0:
+                    CashLedger.objects.create(
+                        company=company,
+                        amount=initial_cash,
+                        transaction_type='inflow',
+                        description="Initial cash in hand"
+                    )
 
                 Bank.objects.create(
                     company=company,
@@ -458,18 +468,28 @@ class CreatePurchaseInvoiceView(APIView):
         payment_mode_id = data.get('payment_mode')
         payment_status_id = data.get('payment_status')
         payment_type_id = data.get('payment_type')
-        paid_amt = data.get('paid_amt', 0.0)
+        print("Request Data:", data)
+        print("company_id:", company_id)
+        print("items:", items)
+        print("payment_mode_id:", payment_mode_id)
+        print("payment_status_id:", payment_status_id)
+        print("payment_type_id:", payment_type_id)
 
-        if not all([company_id, supplier_name, invoice_number, items, payment_mode_id, payment_status_id, payment_type_id]):
-            return Response({"error": "Missing required fields including payment fields or items"}, status=400)
+        # ✅ Validate required fields
+        required_fields = [company_id, supplier_name, invoice_number, items]
+        if any(field is None for field in required_fields):
+            return Response({"error": "Missing required invoice fields"}, status=400)
+
+        if payment_mode_id is None or payment_status_id is None or payment_type_id is None:
+            return Response({"error": "Missing required payment fields"}, status=400)
 
         try:
             company = Company.objects.get(id=company_id)
         except Company.DoesNotExist:
             return Response({"error": "Invalid company ID"}, status=404)
 
-        if PurchaseInvoice.objects.filter(invoice_number=invoice_number).exists():
-            return Response({"error": "Invoice number must be unique"}, status=400)
+        if PurchaseInvoice.objects.filter(invoice_number=invoice_number, company=company).exists():
+            return Response({"error": "Invoice number must be unique within the company"}, status=400)
 
         try:
             payment_mode = PaymentMode.objects.get(id=payment_mode_id)
@@ -478,90 +498,86 @@ class CreatePurchaseInvoiceView(APIView):
         except Exception as e:
             return Response({"error": f"Invalid payment field: {str(e)}"}, status=404)
 
-        invoice = PurchaseInvoice.objects.create(
-            company=company,
-            supplier_name=supplier_name,
-            invoice_number=invoice_number,
-            payment_mode=payment_mode,
-            payment_status=payment_status,
-            payment_type=payment_type,
-            paid_amt=paid_amt
-        )
-
-        total_price = 0
-
-        for item_data in items:
-            item_name = item_data.get('item_name')
-            unit_id = item_data.get('unit')
-            quantity = item_data.get('quantity')
-            cost_price = item_data.get('cost_price')
-
-            if not item_name:
-                invoice.delete()
-                return Response({"error": "Item name is required."}, status=400)
-
-            if not unit_id:
-                invoice.delete()
-                return Response({"error": f"Unit is required for item '{item_name or 'Unnamed'}'."}, status=400)
-
-            if not quantity:
-                invoice.delete()
-                return Response({"error": f"Quantity is required for item '{item_name or 'Unnamed'}'."}, status=400)
-
-            if not cost_price:
-                invoice.delete()
-                return Response({"error": f"Cost price is required for item '{item_name or 'Unnamed'}'."}, status=400)
-
-            try:
-                unit = Unit.objects.get(id=unit_id)
-            except Unit.DoesNotExist:
-                invoice.delete()
-                return Response({"error": f"Invalid unit ID '{unit_id}' for item '{item_name}'."}, status=404)
-
-            line_total = round(quantity * cost_price, 2)
-            total_price += line_total
-
-            existing_items = Item.objects.filter(item_name=item_name, company=company)
-            matched_item = None
-            for item in existing_items:
-                if round(item.price, 2) == round(cost_price, 2):
-                    matched_item = item
-                    break
-
-            if matched_item:
-                matched_item.quantity += quantity
-                matched_item.save()
-            else:
-                Item.objects.create(
+        # ✅ Begin invoice creation
+        try:
+            with transaction.atomic():
+                invoice = PurchaseInvoice.objects.create(
                     company=company,
-                    item_name=item_name,
-                    item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
-                    quantity=quantity,
-                    unit=unit,
-                    description="Auto-created from Purchase Invoice",
-                    tax_type=None,
-                    tax=None,
-                    price=cost_price,
-                    selling_price=round(cost_price * 1.1, 2)
+                    supplier_name=supplier_name,
+                    invoice_number=invoice_number,
+                    payment_mode=payment_mode,
+                    payment_status=payment_status,
+                    payment_type=payment_type,
+                    paid_amt=0  # always initialize as 0
                 )
 
-            PurchaseInvoiceItem.objects.create(
-                invoice=invoice,
-                item_name=item_name,
-                unit=unit,
-                quantity=quantity,
-                cost_price=cost_price,
-                line_total=line_total
-            )
+                total_price = 0
 
-        invoice.total_price = round(total_price, 2)
-        invoice.save(update_fields=["total_price"])
+                for item_data in items:
+                    item_name = item_data.get('item_name')
+                    unit_id = item_data.get('unit')
+                    quantity = item_data.get('quantity')
+                    cost_price = item_data.get('cost_price')
 
-        return Response({
-            "msg": "Purchase invoice created successfully",
-            "invoice_id": invoice.id,
-            "total_price": invoice.total_price
-        }, status=201)
+                    if not all([item_name, unit_id, quantity, cost_price]):
+                        raise ValueError(f"Missing required item fields for item '{item_name or 'Unnamed'}'")
+
+                    try:
+                        unit = Unit.objects.get(id=unit_id)
+                    except Unit.DoesNotExist:
+                        raise ValueError(f"Invalid unit ID '{unit_id}' for item '{item_name}'")
+
+                    line_total = round(quantity * cost_price, 2)
+                    total_price += line_total
+
+                    # Check if item with same price exists
+                    existing_items = Item.objects.filter(item_name=item_name, company=company)
+                    matched_item = None
+                    for item in existing_items:
+                        if round(item.price, 2) == round(cost_price, 2):
+                            matched_item = item
+                            break
+
+                    if matched_item:
+                        matched_item.quantity += quantity
+                        matched_item.save()
+                    else:
+                        matched_item = Item.objects.create(
+                            company=company,
+                            item_name=item_name,
+                            item_code=f"{item_name[:3].upper()}_{Item.objects.count() + 1}",
+                            quantity=quantity,
+                            unit=unit,
+                            description="Auto-created from Purchase Invoice",
+                            tax_type=None,
+                            tax=None,
+                            price=cost_price,
+                            selling_price=round(cost_price * 1.1, 2)
+                        )
+
+                    PurchaseInvoiceItem.objects.create(
+                        invoice=invoice,
+                        item_name=item_name,
+                        unit=unit,
+                        quantity=quantity,
+                        cost_price=cost_price,
+                        line_total=line_total
+                    )
+
+                invoice.total_price = round(total_price, 2)
+                invoice.save(update_fields=["total_price"])
+
+                return Response({
+                    "msg": "Purchase invoice created successfully",
+                    "invoice_id": invoice.id,
+                    "total_price": invoice.total_price
+                }, status=201)
+
+        except ValueError as ve:
+            invoice.delete()
+            return Response({"error": str(ve)}, status=400)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=500)
 
 
 class DeleteItemView(APIView):
@@ -916,24 +932,38 @@ class UpdatePurchaseInvoiceView(APIView):
             return Response({"error": str(e)}, status=400) #outstanding,salesreport person ka name number
         #9322212299
 class PaymentInView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         data = request.data
         amount = float(data.get('amount'))
         invoice_ids = data.get('invoice_ids', [])
-        bank_id = data.get('bank_id')
-
-        if not amount or not invoice_ids or not bank_id:
-            return Response({"error": "amount, invoice_ids, and bank_id are required."}, status=400)
+        company_id = data.get('company_id')  # ✅ required now
+        bank_id = data.get('bank_id')        # optional if cash
+        payment_mode = int(data.get('payment_mode', 1))  # 0=cheque, 1=cash, 2=bank transfer
+        
+        original_amount = amount
+        # Validate required fields
+        if not amount or not invoice_ids or not company_id:
+            return Response({"error": "amount, invoice_ids, and company_id are required."}, status=400)
 
         try:
-            bank = Bank.objects.get(id=bank_id)
-        except Bank.DoesNotExist:
-            return Response({"error": "Bank not found."}, status=404)
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Company not found."}, status=404)
+
+        bank = None
+        if payment_mode in [0, 2]:
+            if not bank_id:
+                return Response({"error": "bank_id is required for cheque or bank transfer."}, status=400)
+            try:
+                bank = Bank.objects.get(id=bank_id, company=company)
+            except Bank.DoesNotExist:
+                return Response({"error": "Bank does not belong to the provided company."}, status=400)
 
         with transaction.atomic():
             for invoice_id in invoice_ids:
                 try:
-                    invoice = SalesInvoice.objects.select_for_update().get(id=invoice_id)
+                    invoice = SalesInvoice.objects.select_for_update().get(id=invoice_id, company=company)
                 except SalesInvoice.DoesNotExist:
                     continue
 
@@ -955,30 +985,46 @@ class PaymentInView(APIView):
                 if amount <= 0:
                     break
 
-            # Update bank balance with transaction
-            BankTransaction.objects.create(
-                bank=bank,
-                company=bank.company,
-                amount=data['amount'],
-                transaction_type='credit',
-                description=f"Payment received for invoices: {invoice_ids}"
-            )
+            description = f"Payment received for invoices: {invoice_ids}"
+
+            if payment_mode in [0, 2]:  # Cheque or Bank Transfer
+                BankTransaction.objects.create(
+                    bank=bank,
+                    company=company,
+                    amount=original_amount,
+                    transaction_type='credit',
+                    description=description
+                )
+            elif payment_mode == 1:  # Cash
+                CashLedger.objects.create(
+                    company=company,
+                    amount=original_amount,
+                    transaction_type='inflow',
+                    description=description
+                )
 
         return Response({"status": 200, "message": "Payment applied successfully."})
 
 
+
+
 class PaymentOutView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         data = request.data
         amount = float(data.get('amount'))
         invoice_ids = data.get('invoice_ids', [])
-        bank_id = data.get('bank_id')
+        bank_id = data.get('bank_id')  # Required only if payment_mode is cheque/bank transfer
+        payment_mode = int(data.get('payment_mode', 1))  # Default to cash
+        original_amount = amount
+        if not amount or not invoice_ids:
+            return Response({"error": "amount and invoice_ids are required."}, status=400)
 
-        if not amount or not invoice_ids or not bank_id:
-            return Response({"error": "amount, invoice_ids, and bank_id are required."}, status=400)
+        if payment_mode in [0, 2] and not bank_id:
+            return Response({"error": "bank_id is required for cheque or bank transfer."}, status=400)
 
         try:
-            bank = Bank.objects.get(id=bank_id)
+            bank = Bank.objects.get(id=bank_id) if bank_id else None
         except Bank.DoesNotExist:
             return Response({"error": "Bank not found."}, status=404)
 
@@ -1007,16 +1053,27 @@ class PaymentOutView(APIView):
                 if amount <= 0:
                     break
 
-            # Deduct from bank balance
-            BankTransaction.objects.create(
-                bank=bank,
-                company=bank.company,
-                amount=data['amount'],
-                transaction_type='debit',
-                description=f"Payment made for purchase invoices: {invoice_ids}"
-            )
+            description = f"Payment made for purchase invoices: {invoice_ids}"
+            company = invoice.company  # assuming all invoices are from same company
 
-        return Response({"status": 200, "message": "Payment applied and bank debited successfully."})
+            if payment_mode in [0, 2]:  # Cheque or Bank Transfer
+                BankTransaction.objects.create(
+                    bank=bank,
+                    company=bank.company,
+                    amount=original_amount,
+                    transaction_type='debit',
+                    description=description
+                )
+            elif payment_mode == 1:  # Cash
+                CashLedger.objects.create(
+                    company=company,
+                    amount=original_amount,
+                    transaction_type='outflow',
+                    description=description
+                )
+
+        return Response({"status": 200, "message": "Payment applied and balance adjusted successfully."})
+
     
 # OWNER VIEWS
 class UpdateOwnerView(APIView):
@@ -1154,53 +1211,5 @@ class CashInView(APIView):
 
         return Response({"status": 200, "message": "Cash payment recorded successfully."})
 
-class CashOutView(APIView):
-    def post(self, request):
-        data = request.data
-        amount = float(data.get('amount'))
-        invoice_ids = data.get('invoice_ids', [])
-        company_id = data.get('company_id')
 
-        if not amount or not invoice_ids or not company_id:
-            return Response({"error": "amount, invoice_ids, and company_id are required."}, status=400)
-
-        try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
-            return Response({"error": "Company not found."}, status=404)
-
-        with transaction.atomic():
-            for invoice_id in invoice_ids:
-                try:
-                    invoice = PurchaseInvoice.objects.select_for_update().get(id=invoice_id)
-                except PurchaseInvoice.DoesNotExist:
-                    continue
-
-                remaining = invoice.total_price - invoice.paid_amt
-                if remaining <= 0:
-                    continue
-
-                if amount >= remaining:
-                    invoice.paid_amt += remaining
-                    invoice.payment_status_id = 3  # Fully paid
-                    amount -= remaining
-                else:
-                    invoice.paid_amt += amount
-                    invoice.payment_status_id = 2  # Partially paid
-                    amount = 0
-
-                invoice.save(update_fields=['paid_amt', 'payment_status'])
-
-                if amount <= 0:
-                    break
-
-            # Log in CashLedger
-            CashLedger.objects.create(
-                company=company,
-                amount=data['amount'],
-                transaction_type='outflow',
-                description=f"Cash paid for purchase invoices: {invoice_ids}"
-            )
-
-        return Response({"status": 200, "message": "Cash payment applied successfully."})
 

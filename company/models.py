@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from .validators import *
+from django.db.models import Sum
 
 
 class Owner(models.Model):
@@ -216,13 +217,7 @@ class BankTransaction(models.Model):
     transaction_type = models.CharField(max_length=6, choices=TRANSACTION_TYPE_CHOICES)
     description = models.TextField(blank=True, null=True, validators=[ValidateIfPresentNotEmpty(field_name="Transaction Description")])
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if self.transaction_type == 'credit':
-            self.bank.opening_balance += self.amount
-        else:
-            self.bank.opening_balance -= self.amount
-        self.bank.save()
+    
 
 class CashLedger(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="cash_ledgers")

@@ -10,9 +10,25 @@ class OwnerSerializer(serializers.ModelSerializer):
         model = Owner
         fields = '__all__'
 class CompanySerializer(serializers.ModelSerializer):
+    bank_balance = serializers.SerializerMethodField()
+    cash_in_hand = serializers.SerializerMethodField()
     class Meta:
         model = Company
         fields = '__all__'
+    def get_bank_balance(self, obj):
+        banks = obj.banks.all()
+        total_balance = 0
+        for bank in banks:
+            opening = bank.opening_balance or 0
+            credit = bank.transactions.filter(transaction_type='credit').aggregate(total=Sum('amount'))['total'] or 0
+            debit = bank.transactions.filter(transaction_type='debit').aggregate(total=Sum('amount'))['total'] or 0
+            total_balance += opening + credit - debit
+        return total_balance
+
+    def get_cash_in_hand(self, obj):
+        inflow = obj.cash_ledgers.filter(transaction_type='inflow').aggregate(total=Sum('amount'))['total'] or 0
+        outflow = obj.cash_ledgers.filter(transaction_type='outflow').aggregate(total=Sum('amount'))['total'] or 0
+        return inflow - outflow
 
 
 class ClientSerializer(serializers.ModelSerializer):
