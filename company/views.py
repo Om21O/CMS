@@ -18,7 +18,17 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from rest_framework import permissions
 from django.db import transaction
+import pandas as pd
 from rest_framework.exceptions import ValidationError
+import os
+from datetime import datetime
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from django.http import JsonResponse
+from rest_framework.views import APIView
+from django.conf import settings
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
 
 #+=========================================================================================================================
 #============================                   LOGIN                              ======================================================================
@@ -1239,7 +1249,103 @@ class PaymentOutView(APIView):
 
     
 
+#+=========================================================================================================================
+#============================             CREATE_EXCEL                              ======================================================================
+#======================================================================================================== 
+
+class InvoiceReportExportView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        company_id = request.data.get('company_id')
+        invoice_type = request.data.get('invoice_type')  # "sales" or "purchase"
+        payment_status = request.data.get('payment_status')  # Optional
+
+        if not company_id or invoice_type not in ["sales", "purchase"]:
+            return JsonResponse({"error": "company_id and valid invoice_type are required"}, status=400)
+
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return JsonResponse({"error": "Invalid company_id"}, status=404)
+
+        if invoice_type == "sales":
+            invoices = SalesInvoice.objects.filter(company=company, deleted=False)
+        else:
+            invoices = PurchaseInvoice.objects.filter(company=company, deleted=False)
+
+        if payment_status is not None:
+            invoices = invoices.filter(payment_status_id=payment_status)
+
+        if not invoices.exists():
+            return JsonResponse({"error": "No invoices found."}, status=404)
+
+        # Prepare Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"{invoice_type.capitalize()} Invoices"
+
+        # Define headers
+        headers = [
+            "S.No", "Invoice Number", "Date", "Client/Supplier Name",
+            "Total Amount", "Paid/Received", "Pending Amount", "Status"
+        ]
+        ws.append(headers)
+
+        # Styling headers
+        header_font = Font(bold=True, color="FFFFFF")
+        fill = PatternFill("solid", fgColor="4F81BD")
+        alignment = Alignment(horizontal="center", vertical="center")
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.font = header_font
+            cell.fill = fill
+            cell.alignment = alignment
+            cell.border = border
+            col_letter = get_column_letter(col_num)
+            ws.column_dimensions[col_letter].width = 20
+
+        # Populate rows
+        for idx, invoice in enumerate(invoices, start=1):
+            if invoice_type == "sales":
+                name = invoice.client.client_name
+                paid = invoice.received_amt
+            else:
+                name = invoice.supplier_name
+                paid = invoice.paid_amt
+
+            row = [
+                idx,
+                invoice.invoice_number,
+                invoice.invoice_date.strftime("%Y-%m-%d"),
+                name,
+                invoice.total_price,
+                paid,
+                round(invoice.total_price - paid, 2),
+                invoice.payment_status.label
+            ]
+            ws.append(row)
+            
+            last_row = ws.max_row
+
+            for col_num in range(1, len(headers) + 1):
+                cell = ws.cell(row=last_row, column=col_num)
+                cell.alignment = alignment
+                cell.border = border
 
 
+        # File path
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"{invoice_type}_invoice_report_{timestamp}.xlsx"
+        file_path = os.path.join(settings.MEDIA_ROOT, filename)
+        os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+        wb.save(file_path)
 
-
+        file_url = f"{request.build_absolute_uri(settings.MEDIA_URL)}{filename}"
+        return JsonResponse({"download_url": file_url}, status=200)

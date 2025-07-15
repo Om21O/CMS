@@ -56,6 +56,8 @@ urlpatterns = [
     # Paymentin and url
     path('payment-in/create/', PaymentInView.as_view(), name='create_payment_in'),
     path('payment-out/create/', PaymentOutView.as_view(), name='create_payment_in'),
+
+    path('export-invoice-report/', InvoiceReportExportView.as_view()),
     
     
 ]
