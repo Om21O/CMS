@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import *
 from .constant import *
 
+
 class OwnerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
@@ -84,18 +85,7 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         model = Employee
         fields = ['username', 'email', 'password', 'phone_number', 'company', 'job_role']
 
-    def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        password = user_data.pop('password')
-
-        # Create User with password hashing
-        user = User(**user_data)
-        user.set_password(password)
-        user.save()
-
-        # Create employee
-        employee = Employee.objects.create(user=user, **validated_data)
-        return employee
+    
 
 class ModulePermissionInputSerializer(serializers.Serializer):
     module_name = serializers.CharField()

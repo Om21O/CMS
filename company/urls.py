@@ -60,10 +60,15 @@ urlpatterns = [
     path('export-invoice-report/', InvoiceReportExportView.as_view()),
 
     path('jobrole/create/', CreateJobRoleWithPermissionsView.as_view()),
-    
     path('jobrole/list/', JobRoleListView.as_view()),
     path('jobrole/<int:job_role_id>/', JobRoleDetailView.as_view()),
     path('jobrole/update/<int:job_role_id>/', JobRoleUpdateView.as_view()),
     path('jobrole/delete/<int:job_role_id>/', JobRoleDeleteView.as_view()),
+
+    path('employee/create/', CreateEmployeeView.as_view()),
+    path('employee/list/', JobRoleListView.as_view()),
+    path('employee/<int:employee_id>/', EmployeeDetailView.as_view()),
+    path('employee/update/<int:employee_id>/', EmployeeUpdateView.as_view()),
+    path('employee/delete/<int:employee_id>/', EmployeeDeleteView.as_view()),
     
 ]

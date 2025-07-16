@@ -271,16 +271,3 @@ class Employee(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.job_role.name}"
     
-class ModulePermission(models.Model):
-    job_role = models.ForeignKey(JobRole, on_delete=models.CASCADE, related_name='permissions')
-    module_name = models.CharField(max_length=100)  # E.g., 'Sales Voucher', 'Inventory'
-    can_view = models.BooleanField(default=False)
-    can_create = models.BooleanField(default=False)
-    can_edit = models.BooleanField(default=False)
-    can_delete = models.BooleanField(default=False)
-
-    
-        
-
-    def __str__(self):
-        return f"{self.job_role.name} - {self.module_name}"

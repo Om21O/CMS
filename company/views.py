@@ -30,7 +30,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 from .permissions import *
-
+from django.contrib.auth.password_validation import validate_password
 
 #+=========================================================================================================================
 #============================                   LOGIN                              ======================================================================
@@ -1358,7 +1358,7 @@ class InvoiceReportExportView(APIView):
 
 
 #+=========================================================================================================================
-#============================             Job Role Creation                              ======================================================================
+#============================             Job Role                               ======================================================================
 #================================================================================================================= 
 
 class CreateJobRoleWithPermissionsView(APIView):
@@ -1405,14 +1405,13 @@ class JobRoleListView(APIView):
         job_roles = JobRole.objects.filter(is_deleted=False)
         serializer = JobRoleDetailSerializer(job_roles, many=True)
         return Response(serializer.data)
+
 class JobRoleDetailView(APIView):
     def get(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
         serializer = JobRoleDetailSerializer(job_role)
         return Response(serializer.data)
 
-
-# Update a Job Role (name only, or add your custom logic)
 class JobRoleUpdateView(APIView):
     def put(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
@@ -1463,12 +1462,140 @@ class JobRoleUpdateView(APIView):
 
         return Response({"message": "Job role updated successfully."}, status=status.HTTP_200_OK)
 
-
-
-# Soft Delete a Job Role
 class JobRoleDeleteView(APIView):
+
     def delete(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
         job_role.is_deleted = True
         job_role.save()
         return Response({"message": "Job role deleted (soft) successfully."}, status=status.HTTP_200_OK)
+    
+ 
+
+
+#+=========================================================================================================================
+#============================             EEMPLOYEE                              ======================================================================
+#================================================================================================================= 
+
+
+
+class CreateEmployeeView(APIView):
+    def post(self, request):
+        data = request.data
+
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        phone_number = data.get('phone_number')
+        company_id = data.get('company')
+        job_role_id = data.get('job_role')
+
+        if not all([username, email, password, phone_number, company_id, job_role_id]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(password)
+        except ValidationError as e:
+            return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(username=username).exists():
+            return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            company = Company.objects.get(id=company_id)
+            job_role = JobRole.objects.get(id=job_role_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Invalid company ID."}, status=status.HTTP_400_BAD_REQUEST)
+        except JobRole.DoesNotExist:
+            return Response({"error": "Invalid job role ID."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User(username=username, email=email)
+        user.set_password(password)
+        user.save()
+
+        employee = Employee.objects.create(
+            user=user,
+            phone_number=phone_number,
+            company=company,
+            job_role=job_role
+        )
+
+        return Response({
+            "message": "Employee created successfully.",
+            "employee_id": employee.id,
+            "username": user.username,
+            "email": user.email
+        }, status=status.HTTP_201_CREATED)
+
+class EmployeeDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, employee_id):
+        # Fetch the employee if not soft-deleted
+        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
+
+        # Check permissions
+        user = request.user
+        is_employee = user == employee.user
+        is_superuser = user.is_superuser
+        is_owner = hasattr(user, 'owner_profile') and employee.company in user.owner_profile.companies.all()
+
+
+        if not (is_employee or is_superuser or is_owner):
+            return Response(
+                {"error": "Permission denied. You do not have access to this employee's data."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Prepare response data
+        data = {
+            "id": employee.id,
+            "username": employee.user.username,
+            "email": employee.user.email,
+            "phone_number": employee.phone_number,
+            "company": employee.company.company_name,
+
+            "job_role": employee.job_role.name
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+class EmployeeUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, employee_id):
+        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
+        if request.user != employee.user and not request.user.is_superuser:
+            return Response({"error": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data
+        phone_number = data.get("phone_number")
+        job_role_id = data.get("job_role")
+
+        if phone_number:
+            employee.phone_number = phone_number
+
+        if job_role_id:
+            try:
+                job_role = JobRole.objects.get(id=job_role_id)
+                employee.job_role = job_role
+            except JobRole.DoesNotExist:
+                return Response({"error": "Invalid job role ID."}, status=status.HTTP_400_BAD_REQUEST)
+
+        employee.save()
+        return Response({"message": "Employee updated successfully."})
+
+class EmployeeDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, employee_id):
+        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
+        if request.user != employee.user and not request.user.is_superuser:
+            return Response({"error": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+        employee.deleted = True
+        employee.save()
+        return Response({"message": "Employee soft-deleted successfully."})
+
