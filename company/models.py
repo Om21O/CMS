@@ -253,8 +253,7 @@ class ModulePermission(models.Model):
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
 
-    class Meta:
-        unique_together = ('job_role', 'module_name')  # Prevent duplicates
+    
 
     def __str__(self):
         return f"{self.job_role.name} - {self.module_name}"
@@ -279,8 +278,8 @@ class ModulePermission(models.Model):
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
 
-    class Meta:
-        unique_together = ('job_role', 'module_name')  # Prevent duplicates
+    
+        
 
     def __str__(self):
         return f"{self.job_role.name} - {self.module_name}"
