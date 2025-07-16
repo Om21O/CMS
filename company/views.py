@@ -1595,6 +1595,7 @@ class EmployeeDetailView(APIView):
             "job_role": employee.job_role.name
         }
         return Response(data, status=status.HTTP_200_OK)
+
 class EmployeeListView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "employee"  # required for employee-level permission check
@@ -1631,6 +1632,7 @@ class EmployeeListView(APIView):
             })
 
         return Response(data, status=200)
+
 class EmployeeUpdateView(APIView):
     permission_classes = [IsAuthenticated, IsSelfOrOwner]
 
@@ -1658,7 +1660,6 @@ class EmployeeUpdateView(APIView):
 
         employee.save()
         return Response({"message": "Employee updated successfully."})
-
 
 class EmployeeDeleteView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
