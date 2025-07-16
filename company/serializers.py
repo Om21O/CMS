@@ -114,24 +114,19 @@ class ModulePermissionInputSerializer(serializers.Serializer):
         return internal_name  # return the internal module name
 
 class JobRoleCreateSerializer(serializers.ModelSerializer):
-    permissions = ModulePermissionInputSerializer(many=True)
+    class Meta:
+        model = JobRole
+        fields = ['name'] 
+class ModulePermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModulePermission
+        fields = ['module_name', 'can_view', 'can_create', 'can_edit', 'can_delete']
+class JobRoleDetailSerializer(serializers.ModelSerializer):
+    permissions = ModulePermissionSerializer(many=True, read_only=True)
 
     class Meta:
         model = JobRole
-        fields = ['name', 'permissions']
+        fields = ['id', 'name', 'permissions']
+        
 
-    def create(self, validated_data):
-        permissions_data = validated_data.pop('permissions')
-        job_role = JobRole.objects.create(**validated_data)
-
-        for perm in permissions_data:
-            # The module_name has already been validated and mapped to internal name
-            ModulePermission.objects.create(
-                job_role=job_role,
-                module_name=perm['module_name'],
-                can_view=perm['can_view'],
-                can_create=perm['can_create'],
-                can_edit=perm['can_edit'],
-                can_delete=perm['can_delete']
-            )
-        return job_role
+    

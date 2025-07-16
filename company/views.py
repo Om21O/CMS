@@ -1365,12 +1365,110 @@ class CreateJobRoleWithPermissionsView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = JobRoleCreateSerializer(data=request.data)
+        data = request.data.copy()
+        permissions = data.pop('permissions', [])
+        
+        # Check for duplicate module_name
+        seen_modules = set()
+        deduped_permissions = []
+        for perm in permissions:
+            module = perm['module_name'].strip().lower()
+            if module not in seen_modules:
+                seen_modules.add(module)
+                deduped_permissions.append(perm)
+        
+        serializer = JobRoleCreateSerializer(data=data)
         if serializer.is_valid():
             job_role = serializer.save()
+
+            # Create ModulePermission entries
+            for perm in deduped_permissions:
+                ModulePermission.objects.create(
+                    job_role=job_role,
+                    module_name=perm['module_name'].strip().lower(),
+                    can_view=perm.get('can_view', False),
+                    can_create=perm.get('can_create', False),
+                    can_edit=perm.get('can_edit', False),
+                    can_delete=perm.get('can_delete', False)
+                )
+
             return Response({
                 "message": "Job role created successfully.",
                 "job_role_id": job_role.id,
                 "name": job_role.name
             }, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class JobRoleListView(APIView):
+    def get(self, request):
+        job_roles = JobRole.objects.filter(is_deleted=False)
+        serializer = JobRoleDetailSerializer(job_roles, many=True)
+        return Response(serializer.data)
+class JobRoleDetailView(APIView):
+    def get(self, request, job_role_id):
+        job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+        serializer = JobRoleDetailSerializer(job_role)
+        return Response(serializer.data)
+
+
+# Update a Job Role (name only, or add your custom logic)
+class JobRoleUpdateView(APIView):
+    def put(self, request, job_role_id):
+        job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+        data = request.data
+
+        # 1. Validate name
+        new_name = data.get("name")
+        if not new_name:
+            return Response({"error": "Name is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if JobRole.objects.filter(name=new_name).exclude(id=job_role_id).exists():
+            return Response({"error": "Job role name must be unique."}, status=status.HTTP_400_BAD_REQUEST)
+
+        job_role.name = new_name
+        job_role.save()
+
+        # 2. Validate and update permissions
+        permissions_data = data.get("permissions")
+        if permissions_data is None:
+            return Response({"error": "Permissions are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Delete old permissions
+        ModulePermission.objects.filter(job_role=job_role).delete()
+
+        # Save new permissions
+        for perm in permissions_data:
+            module_name = perm.get("module_name")
+            if not module_name:
+                continue  # Skip invalid entries
+
+            # Convert alias to internal module name
+            normalized = module_name.strip().lower()
+            internal_name = ALIAS_TO_MODULE_MAP.get(normalized)
+            if not internal_name:
+                return Response(
+                    {"error": f"Invalid module name alias: {module_name}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            ModulePermission.objects.create(
+                job_role=job_role,
+                module_name=internal_name,
+                can_view=perm.get("can_view", False),
+                can_create=perm.get("can_create", False),
+                can_edit=perm.get("can_edit", False),
+                can_delete=perm.get("can_delete", False)
+            )
+
+        return Response({"message": "Job role updated successfully."}, status=status.HTTP_200_OK)
+
+
+
+# Soft Delete a Job Role
+class JobRoleDeleteView(APIView):
+    def delete(self, request, job_role_id):
+        job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+        job_role.is_deleted = True
+        job_role.save()
+        return Response({"message": "Job role deleted (soft) successfully."}, status=status.HTTP_200_OK)

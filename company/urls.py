@@ -61,5 +61,9 @@ urlpatterns = [
 
     path('jobrole/create/', CreateJobRoleWithPermissionsView.as_view()),
     
+    path('jobrole/list/', JobRoleListView.as_view()),
+    path('jobrole/<int:job_role_id>/', JobRoleDetailView.as_view()),
+    path('jobrole/update/<int:job_role_id>/', JobRoleUpdateView.as_view()),
+    path('jobrole/delete/<int:job_role_id>/', JobRoleDeleteView.as_view()),
     
 ]
