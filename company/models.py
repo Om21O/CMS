@@ -260,7 +260,7 @@ class ModulePermission(models.Model):
         return f"{self.job_role.name} - {self.module_name}"
 
 class Employee(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="employee_profile")
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employees")
     job_role = models.ForeignKey(JobRole, on_delete=models.PROTECT, related_name="employees")

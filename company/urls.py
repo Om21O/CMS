@@ -66,7 +66,7 @@ urlpatterns = [
     path('jobrole/delete/<int:job_role_id>/', JobRoleDeleteView.as_view()),
 
     path('employee/create/', CreateEmployeeView.as_view()),
-    path('employee/list/', JobRoleListView.as_view()),
+    path("employee/", EmployeeListView.as_view(), name="employee-list"),
     path('employee/<int:employee_id>/', EmployeeDetailView.as_view()),
     path('employee/update/<int:employee_id>/', EmployeeUpdateView.as_view()),
     path('employee/delete/<int:employee_id>/', EmployeeDeleteView.as_view()),

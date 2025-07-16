@@ -28,8 +28,7 @@ ALIAS_TO_MODULE_MAP = {
     # 💰 Manage Money (Assuming Payment In/Out)
     "manage money": "payment",
     "payment": "payment",
-    "payment-in": "payment-in",
-    "payment-out": "payment-out",
+    
 
     # 📊 Reports
     "report": "export-invoice-report",

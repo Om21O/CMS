@@ -2,13 +2,31 @@ from rest_framework.permissions import BasePermission
 
 from rest_framework.permissions import BasePermission
 
-class HasModulePermission(BasePermission):
+from rest_framework.permissions import BasePermission
+
+class OwnerOrEmployee(BasePermission):
     """
-    Custom permission class that checks if the employee's job role allows
-    access to the requested module and action (view, create, edit, delete).
+    Allows:
+    - Superuser ✅
+    - Owner (via owner_profile) ✅
+    - Employee with module permission ✅
     """
 
     def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            print("[DENIED] Not authenticated")
+            return False
+        if user.is_superuser:
+            print("[ALLOWED] Superuser")
+            return True
+        if hasattr(user, 'owner_profile'):
+            print("[ALLOWED] Owner profile")
+            return True
+        if not hasattr(user, 'employee'):
+            print("[DENIED] Not an employee")
+            return False
+
         method_map = {
             'GET': 'view',
             'POST': 'create',
@@ -16,23 +34,51 @@ class HasModulePermission(BasePermission):
             'PATCH': 'edit',
             'DELETE': 'delete',
         }
-
-        if not request.user.is_authenticated or not hasattr(request.user, 'employee'):
-            return False
-
-        employee = request.user.employee
-        job_role = employee.job_role
         action_type = method_map.get(request.method)
-
-        if not action_type:
-            return False
-
         module_name = getattr(view, 'module_name', None)
-        if not module_name:
+
+        print(f"[DEBUG] action_type: {action_type}, module_name: {module_name}")
+
+        if not action_type or not module_name:
+            print("[DENIED] Missing action_type or module_name")
             return False
 
-        return job_role.permissions.filter(
+        allowed = user.employee.job_role.permissions.filter(
             module_name=module_name,
             **{f"can_{action_type}": True}
         ).exists()
 
+        print(f"[PERMISSION CHECK] Allowed? {allowed}")
+        return allowed
+
+class IsOwner(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        is_superuser = user.is_superuser
+        is_owner = hasattr(user, 'owner_profile') and obj.company in user.owner_profile.companies.all()
+        return is_owner or is_superuser
+
+class IsSelfOrOwner(BasePermission):
+    """
+    Allows access if:
+    - The user is the employee being viewed (self)
+    - The user is a superuser
+    - The user is an owner and the employee belongs to one of their companies
+    """
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+
+        # Superuser has full access
+        if user.is_superuser:
+            return True
+
+        # Owner: check if employee is part of their companies
+        if hasattr(user, 'owner_profile'):
+            return obj.company in user.owner_profile.companies.all()
+
+        # Employee can access their own data
+        if hasattr(user, 'employee'):
+            return obj.user == user
+
+        return False
