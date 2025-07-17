@@ -3,28 +3,11 @@ from rest_framework.permissions import BasePermission
 from rest_framework.permissions import BasePermission
 
 from rest_framework.permissions import BasePermission
+from .models import EmployeeCompanyMap, ModulePermission
 
 class OwnerOrEmployee(BasePermission):
-    """
-    Allows:
-    - Superuser ✅
-    - Owner (via owner_profile) ✅
-    - Employee with module permission ✅
-    """
-
     def has_permission(self, request, view):
-        user = request.user
-        if not user.is_authenticated:
-            print("[DENIED] Not authenticated")
-            return False
-        if user.is_superuser:
-            print("[ALLOWED] Superuser")
-            return True
-        if hasattr(user, 'owner_profile'):
-            print("[ALLOWED] Owner profile")
-            return True
-        if not hasattr(user, 'employee'):
-            print("[DENIED] Not an employee")
+        if not request.user.is_authenticated:
             return False
 
         method_map = {
@@ -32,25 +15,43 @@ class OwnerOrEmployee(BasePermission):
             'POST': 'create',
             'PUT': 'edit',
             'PATCH': 'edit',
-            'DELETE': 'delete',
+            'DELETE': 'delete'
         }
-        action_type = method_map.get(request.method)
-        module_name = getattr(view, 'module_name', None)#get the name of module that we have mentioned in view  
 
-        
-
-        if not action_type or not module_name:
-            print("[DENIED] Missing action_type or module_name")
+        action = method_map.get(request.method)
+        if not action:
             return False
 
-        allowed = user.employee.job_role.permissions.filter(
-            module_name=module_name,
-            **{f"can_{action_type}": True}
-        ).exists()
+        try:
+            emp_map = EmployeeCompanyMap.objects.get(employee__user=request.user, is_active=True)
+            user_company = emp_map.company
+            user_role = emp_map.job_role
 
-        print(f"[PERMISSION CHECK] Allowed? {allowed}")
-        return allowed
+            if not user_company or not user_role:
+                return False
 
+            permission = ModulePermission.objects.filter(
+                job_role=user_role,
+                company=user_company,
+                module_name=view.module_name
+            ).first()
+
+            if not permission:
+                return False
+
+            # Special case: POST treated as GET (e.g. for filtering/search APIs)
+            if request.method == "POST" and getattr(view, "is_post_as_get", False):
+                return permission.can_get_using_post
+
+            # Special case: GET with specific ID (like retrieve view)
+            if request.method == "GET" and getattr(view, "is_view_specific", False):
+                return permission.can_view_specific
+
+            # Regular permission
+            return getattr(permission, f"can_{action}", False)
+
+        except EmployeeCompanyMap.DoesNotExist:
+            return False
 class IsOwner(BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user

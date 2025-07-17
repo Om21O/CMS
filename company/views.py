@@ -400,6 +400,7 @@ class CreateClientView(APIView):
 class RetrieveClientView(APIView):
    # permission_classes = [AllowAny]
     module_name = "client"
+    is_view_specific = True 
    
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     def get(self, request, pk):
@@ -578,6 +579,7 @@ class RetrieveItemView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
+    is_view_specific = True 
     def get(self, request, pk):
         item = get_object_or_404(Item, pk=pk,deleted=False)
         serializer = ItemSerializer(item)
@@ -1398,13 +1400,14 @@ class InvoiceReportExportView(APIView):
 #================================================================================================================= 
 
 class CreateJobRoleWithPermissionsView(APIView):
-    permission_classes = [IsAuthenticated,OwnerOrEmployee]
-    module_name ="jobrole"
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "jobrole"
+
     def post(self, request):
         data = request.data.copy()
         permissions = data.pop('permissions', [])
-        
-        # Check for duplicate module_name
+
+        # ✅ Deduplicate module names
         seen_modules = set()
         deduped_permissions = []
         for perm in permissions:
@@ -1412,30 +1415,57 @@ class CreateJobRoleWithPermissionsView(APIView):
             if module not in seen_modules:
                 seen_modules.add(module)
                 deduped_permissions.append(perm)
-        
+
+        # ✅ Validate ownership of company
+        owner = getattr(request.user, 'owner_profile', None)
+        if not owner:
+            return Response({"error": "Owner not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        companies = owner.companies.all()
+        company_id = data.get('company')
+        if not company_id:
+            return Response({"error": "Company ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            company = companies.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response({"error": "Invalid company for this user."}, status=status.HTTP_403_FORBIDDEN)
+
+        # ✅ Inject verified company back into data
+        data['company'] = company.id
+
+        # ✅ Save JobRole
         serializer = JobRoleCreateSerializer(data=data)
-        if serializer.is_valid():
-            job_role = serializer.save()
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            # Create ModulePermission entries
-            for perm in deduped_permissions:
-                ModulePermission.objects.create(
-                    job_role=job_role,
-                    module_name=perm['module_name'].strip().lower(),
-                    can_view=perm.get('can_view', False),
-                    can_create=perm.get('can_create', False),
-                    can_edit=perm.get('can_edit', False),
-                    can_delete=perm.get('can_delete', False)
-                )
+        job_role = serializer.save()
 
-            return Response({
-                "message": "Job role created successfully.",
-                "job_role_id": job_role.id,
-                "name": job_role.name
-            }, status=status.HTTP_201_CREATED)
+        duplicate_modules = []
+        for perm in deduped_permissions:
+            module_name = perm['module_name'].strip().lower()
+            _, created = ModulePermission.objects.get_or_create(
+                job_role=job_role,
+                company=company,
+                module_name=module_name,
+                defaults={
+                    "can_view": perm.get('can_view', False),
+                    "can_create": perm.get('can_create', False),
+                    "can_edit": perm.get('can_edit', False),
+                    "can_delete": perm.get('can_delete', False),
+                    "can_view_specific": perm.get('can_view_specific', False),
+                    "can_get_using_post": perm.get('can_get_using_post', False),
+                }
+            )
+            if not created:
+                duplicate_modules.append(module_name)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+        return Response({
+            "message": "Job role created successfully.",
+            "job_role_id": job_role.id,
+            "name": job_role.name,
+            "skipped_modules": duplicate_modules
+        }, status=status.HTTP_201_CREATED)
 class JobRoleListView(APIView):
     permission_classes=[IsAuthenticated,OwnerOrEmployee]
     module_name ="jobrole"
@@ -1523,8 +1553,8 @@ class JobRoleDeleteView(APIView):
 
 
 class CreateEmployeeView(APIView):
-    permission_classes=[OwnerOrEmployee,IsAuthenticated]
-    
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+
     def post(self, request):
         data = request.data
 
@@ -1551,29 +1581,35 @@ class CreateEmployeeView(APIView):
 
         try:
             company = Company.objects.get(id=company_id)
-            job_role = JobRole.objects.get(id=job_role_id)
         except Company.DoesNotExist:
             return Response({"error": "Invalid company ID."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            job_role = JobRole.objects.get(id=job_role_id)
         except JobRole.DoesNotExist:
             return Response({"error": "Invalid job role ID."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User(username=username, email=email)
-        user.set_password(password)
-        user.save()
+        # Create the user and employee
+        user = User.objects.create_user(username=username, email=email, password=password)
+        employee = Employee.objects.create(user=user, phone_number=phone_number)
 
-        employee = Employee.objects.create(
-            user=user,
-            phone_number=phone_number,
+        # Map to company and job role
+        EmployeeCompanyMap.objects.create(
+            employee=employee,
             company=company,
-            job_role=job_role
+            job_role=job_role,
+            is_active=True
         )
 
         return Response({
-            "message": "Employee created successfully.",
+            "message": "Employee created and mapped successfully.",
             "employee_id": employee.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "company": company.company_name,  # Make sure to match actual field in your model
+            "job_role": job_role.name
         }, status=status.HTTP_201_CREATED)
+
 
 class EmployeeDetailView(APIView):
     permission_classes = [IsAuthenticated, IsSelfOrOwner]

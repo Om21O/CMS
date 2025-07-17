@@ -76,14 +76,17 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
     def get_pending_amount(self, obj):
         return round(obj.total_price - obj.paid_amt, 2)
 
-class EmployeeCreateSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username')
-    email = serializers.EmailField(source='user.email')
-    password = serializers.CharField(write_only=True, source='user.password')
+class EmployeeCreateSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    phone_number = serializers.CharField()
+    company_id = serializers.IntegerField()
+    job_role_id = serializers.IntegerField()
 
-    class Meta:
-        model = Employee
-        fields = ['username', 'email', 'password', 'phone_number', 'company', 'job_role']
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Username already exists.")
+        return value
 
     
 
@@ -106,7 +109,7 @@ class ModulePermissionInputSerializer(serializers.Serializer):
 class JobRoleCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobRole
-        fields = ['name'] 
+        fields = ['name', 'company'] 
 class ModulePermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModulePermission

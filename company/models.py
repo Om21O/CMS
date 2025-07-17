@@ -240,34 +240,53 @@ class CashLedger(models.Model):
         return f"{self.date} - {self.transaction_type} - {self.amount}"
     
 class JobRole(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="job_roles")
     is_deleted = models.BooleanField(default=False)
 
+    class Meta:
+        unique_together = ('name', 'company')  # ✅ Ensures name unique per company
+
     def __str__(self):
-        return self.name
-    
+        return f"{self.name} ({self.company.company_name})"
+
+
 class ModulePermission(models.Model):
     job_role = models.ForeignKey(JobRole, on_delete=models.DO_NOTHING, related_name='permissions')
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="module_permissions")
     module_name = models.CharField(max_length=100)  # E.g., 'Sales Voucher', 'Inventory'
+    
     can_view = models.BooleanField(default=False)
     can_create = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
+    can_view_specific = models.BooleanField(default=False)
+    can_get_using_post = models.BooleanField(default=False)
 
-    
+    class Meta:
+        unique_together = ('job_role', 'module_name')  # ✅ Corrected
 
     def __str__(self):
-        return f"{self.job_role.name} - {self.module_name}"
+        return f"{self.job_role.name} - {self.module_name} ({self.job_role.company.company_name})"
 
 class Employee(models.Model):
-    user = models.OneToOneField(User, on_delete=models.DO_NOTHING)
-    
-    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="employees")
-    job_role = models.ForeignKey(JobRole, on_delete=models.PROTECT, related_name="employees")
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone_number = models.CharField(max_length=10, validators=[ValidatePhoneNumber()])
     
+    job_role = models.ForeignKey(JobRole, on_delete=models.SET_NULL, null=True, blank=True)
     deleted = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.user.username} - {self.job_role.name}"
+        return self.user.username
     
+class EmployeeCompanyMap(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="company_links")
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employee_links")
+    job_role = models.ForeignKey(JobRole, on_delete=models.PROTECT, related_name="employee_mappings")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('employee', 'company')  # ✅ Prevents duplicate company assignment
+
+    def __str__(self):
+        return f"{self.employee} in {self.company.company_name} as {self.job_role.name}"
