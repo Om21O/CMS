@@ -35,9 +35,9 @@ class OwnerOrEmployee(BasePermission):
             'DELETE': 'delete',
         }
         action_type = method_map.get(request.method)
-        module_name = getattr(view, 'module_name', None)
+        module_name = getattr(view, 'module_name', None)#get the name of module that we have mentioned in view  
 
-        print(f"[DEBUG] action_type: {action_type}, module_name: {module_name}")
+        
 
         if not action_type or not module_name:
             print("[DENIED] Missing action_type or module_name")

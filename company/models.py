@@ -194,7 +194,7 @@ class PurchaseInvoiceItem(models.Model):
 
 
 class Bank(models.Model):
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="banks")
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="banks")
     bank_name = models.CharField(max_length=100, validators=[ValidateName(field_name="Bank Name")])
     account_holder_name = models.CharField(max_length=100, validators=[ValidateName(field_name="Account Holder Name")])
     account_no = models.CharField(max_length=30, validators=[validate_account_number])
@@ -211,8 +211,8 @@ class Bank(models.Model):
 
 
 class BankTransaction(models.Model):
-    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name="transactions")
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="bank_transactions")
+    bank = models.ForeignKey(Bank, on_delete=models.DO_NOTHING, related_name="transactions")
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="bank_transactions")
     date = models.DateField(auto_now_add=True)
     amount = models.FloatField(validators=[ValidatePositiveAmount(field_name="Transaction Amount")])
     TRANSACTION_TYPE_CHOICES = [
@@ -225,7 +225,7 @@ class BankTransaction(models.Model):
     
 
 class CashLedger(models.Model):
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="cash_ledgers")
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="cash_ledgers")
     date = models.DateField(auto_now_add=True)
     amount = models.FloatField(validators=[ValidatePositiveAmount(field_name="Amount")])
     
@@ -247,7 +247,7 @@ class JobRole(models.Model):
         return self.name
     
 class ModulePermission(models.Model):
-    job_role = models.ForeignKey(JobRole, on_delete=models.CASCADE, related_name='permissions')
+    job_role = models.ForeignKey(JobRole, on_delete=models.DO_NOTHING, related_name='permissions')
     module_name = models.CharField(max_length=100)  # E.g., 'Sales Voucher', 'Inventory'
     can_view = models.BooleanField(default=False)
     can_create = models.BooleanField(default=False)
@@ -260,9 +260,9 @@ class ModulePermission(models.Model):
         return f"{self.job_role.name} - {self.module_name}"
 
 class Employee(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.DO_NOTHING)
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employees")
+    company = models.ForeignKey(Company, on_delete=models.DO_NOTHING, related_name="employees")
     job_role = models.ForeignKey(JobRole, on_delete=models.PROTECT, related_name="employees")
     phone_number = models.CharField(max_length=10, validators=[ValidatePhoneNumber()])
     
