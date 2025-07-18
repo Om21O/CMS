@@ -11,4 +11,5 @@ ALIAS_TO_MODULE_MAP = {
     "company",
     "owner",
     "jobrole"
+    "excel"
 }

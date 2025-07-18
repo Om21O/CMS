@@ -736,7 +736,7 @@ class SoftDeleteSalesInvoiceView(APIView):
 
         except SalesInvoice.DoesNotExist:
             return Response({"error": "Invoice not found or already deleted"}, status=status.HTTP_404_NOT_FOUND)
-
+    
 class RetrieveSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
@@ -1296,7 +1296,8 @@ class PaymentOutView(APIView):
 class InvoiceReportExportView(APIView):
 
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
-    module_name ="payment"
+    module_name ="excel"
+    is_post_as_get=True
 
     def post(self, request):
         company_id = request.data.get('company_id')
@@ -1475,53 +1476,57 @@ class JobRoleListView(APIView):
         return Response(serializer.data)
 
 class JobRoleDetailView(APIView):
-    permission_classes=[IsAuthenticated,OwnerOrEmployee]
-    module_name ="jobrole"
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "jobrole"
+
     def get(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+
+        # Ensure same company
+        if job_role.company.id != request.user.employee_master.company.id:
+            return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = JobRoleDetailSerializer(job_role)
         return Response(serializer.data)
 
+
 class JobRoleUpdateView(APIView):
-    permission_classes=[IsAuthenticated,OwnerOrEmployee]
-    module_name ="jobrole"
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "jobrole"
+
     def put(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+
+        # Ensure same company
+        if job_role.company.id != request.user.employee_master.company.id:
+            return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+
         data = request.data
 
-        # 1. Validate name
         new_name = data.get("name")
         if not new_name:
             return Response({"error": "Name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if JobRole.objects.filter(name=new_name).exclude(id=job_role_id).exists():
+        if JobRole.objects.filter(name=new_name, company=job_role.company).exclude(id=job_role_id).exists():
             return Response({"error": "Job role name must be unique."}, status=status.HTTP_400_BAD_REQUEST)
 
         job_role.name = new_name
         job_role.save()
 
-        # 2. Validate and update permissions
         permissions_data = data.get("permissions")
         if permissions_data is None:
             return Response({"error": "Permissions are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Delete old permissions
         ModulePermission.objects.filter(job_role=job_role).delete()
 
-        # Save new permissions
         for perm in permissions_data:
             module_name = perm.get("module_name")
             if not module_name:
-                continue  # Skip invalid entries
+                continue
 
-            # Convert alias to internal module name
-            normalized = module_name.strip().lower()
-            internal_name = ALIAS_TO_MODULE_MAP.get(normalized)
+            internal_name = ALIAS_TO_MODULE_MAP.get(module_name.strip().lower())
             if not internal_name:
-                return Response(
-                    {"error": f"Invalid module name alias: {module_name}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({"error": f"Invalid module name alias: {module_name}"}, status=status.HTTP_400_BAD_REQUEST)
 
             ModulePermission.objects.create(
                 job_role=job_role,
@@ -1529,20 +1534,26 @@ class JobRoleUpdateView(APIView):
                 can_view=perm.get("can_view", False),
                 can_create=perm.get("can_create", False),
                 can_edit=perm.get("can_edit", False),
-                can_delete=perm.get("can_delete", False)
+                can_delete=perm.get("can_delete", False),
+                can_view_specific=perm.get("can_view_specific", False),
+                can_get_using_post=perm.get("can_get_using_post", False)
             )
 
         return Response({"message": "Job role updated successfully."}, status=status.HTTP_200_OK)
-
 class JobRoleDeleteView(APIView):
-    permission_classes=[IsAuthenticated,OwnerOrEmployee]
-    module_name ="jobrole"
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "jobrole"
+
     def delete(self, request, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+
+        # Ensure same company
+        if job_role.company.id != request.user.employee_master.company.id:
+            return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+
         job_role.is_deleted = True
         job_role.save()
         return Response({"message": "Job role deleted (soft) successfully."}, status=status.HTTP_200_OK)
-    
  
 
 

@@ -7,7 +7,18 @@ from .models import EmployeeCompanyMap, ModulePermission
 
 class OwnerOrEmployee(BasePermission):
     def has_permission(self, request, view):
-        if not request.user.is_authenticated:
+        user = request.user
+        if not user.is_authenticated:
+            print("[DENIED] Not authenticated")
+            return False
+        if user.is_superuser:
+            print("[ALLOWED] Superuser")
+            return True
+        if hasattr(user, 'owner_profile'):
+            print("[ALLOWED] Owner profile")
+            return True
+        if not hasattr(user, 'employee'):
+            print("[DENIED] Not an employee")
             return False
 
         method_map = {
@@ -24,8 +35,9 @@ class OwnerOrEmployee(BasePermission):
 
         try:
             emp_map = EmployeeCompanyMap.objects.get(employee__user=request.user, is_active=True)
-            user_company = emp_map.company
+            user_company = emp_map.company   
             user_role = emp_map.job_role
+            
 
             if not user_company or not user_role:
                 return False

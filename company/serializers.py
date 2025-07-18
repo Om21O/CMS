@@ -109,11 +109,11 @@ class ModulePermissionInputSerializer(serializers.Serializer):
 class JobRoleCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobRole
-        fields = ['name', 'company'] 
+        fields = '__all__'
 class ModulePermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModulePermission
-        fields = ['module_name', 'can_view', 'can_create', 'can_edit', 'can_delete']
+        fields = '__all__'
 class JobRoleDetailSerializer(serializers.ModelSerializer):
     permissions = ModulePermissionSerializer(many=True, read_only=True)
 
