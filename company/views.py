@@ -32,6 +32,7 @@ from openpyxl.utils import get_column_letter
 from .permissions import *
 from django.contrib.auth.password_validation import validate_password
 
+
 #+=========================================================================================================================
 #============================                   LOGIN                              ======================================================================
 #======================================================================================================== 
@@ -1623,59 +1624,106 @@ class CreateEmployeeView(APIView):
 
 
 class EmployeeDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsSelfOrOwner]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, employee_id):
-        # 1. Get employee
-        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
+        user = request.user
 
-        # 2. Enforce object-level permission
-        self.check_object_permissions(request, employee)
+        # 1. Get the employee object
+        try:
+            employee = Employee.objects.get(id=employee_id, deleted=False)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found."}, status=404)
 
-        # 3. Return data only if access is allowed
+        # 2. Owner Access
+        if hasattr(user, 'owner_profile'):
+            # Get all companies owned by this owner
+            companies = user.owner_profile.companies.all()
+
+            # Check if this employee is mapped to any of the owner's companies
+            if not EmployeeCompanyMap.objects.filter(
+                employee=employee,
+                company__in=companies,
+                is_active=True
+            ).exists():
+                return Response({"error": "Permission denied."}, status=403)
+
+        # 3. Superuser Access
+        elif user.is_superuser:
+            pass  # allow
+
+        # 4. Employee Access
+        elif hasattr(user, 'employee'):
+            if employee.user != user:
+                return Response({"error": "Permission denied."}, status=403)
+
+        # 5. Other roles
+        else:
+            return Response({"error": "Permission denied."}, status=403)
+
+        # 6. Fetch employee-company map (assumes one active map per employee)
+        emp_map = EmployeeCompanyMap.objects.filter(employee=employee, is_active=True).first()
+        company_name = emp_map.company.company_name if emp_map else None
+        job_role = emp_map.job_role.name if emp_map and emp_map.job_role else None
+
+        # 7. Return employee details
         data = {
             "id": employee.id,
             "username": employee.user.username,
             "email": employee.user.email,
             "phone_number": employee.phone_number,
-            "company": employee.company.company_name,
-            "job_role": employee.job_role.name
+            "company": company_name,
+            "job_role": job_role
         }
-        return Response(data, status=status.HTTP_200_OK)
+
+        return Response(data, status=200)
+
 
 class EmployeeListView(APIView):
-    permission_classes = [IsAuthenticated, OwnerOrEmployee]
-    module_name = "employee"  # required for employee-level permission check
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
 
-        # Owners can see all employees in their companies
+        # Owner can see all employees under their companies
         if hasattr(user, 'owner_profile'):
             companies = user.owner_profile.companies.all()
-            employees = Employee.objects.filter(company__in=companies, deleted=False)
 
-        # Superuser can see all
+            # Fetch all employee-company maps under these companies
+            emp_maps = EmployeeCompanyMap.objects.filter(
+                company__in=companies,
+                is_active=True,
+                employee__deleted=False
+            ).select_related('employee', 'company', 'job_role', 'employee__user')
+
+        # Superuser can see all active employees
         elif user.is_superuser:
-            employees = Employee.objects.filter(deleted=False)
+            emp_maps = EmployeeCompanyMap.objects.filter(
+                is_active=True,
+                employee__deleted=False
+            ).select_related('employee', 'company', 'job_role', 'employee__user')
 
         # Employee can only see themselves
         elif hasattr(user, 'employee'):
-            employees = Employee.objects.filter(user=user, deleted=False)
+            emp_maps = EmployeeCompanyMap.objects.filter(
+                employee=user.employee,
+                is_active=True
+            ).select_related('employee', 'company', 'job_role', 'employee__user')
 
         else:
             return Response({"error": "Permission denied."}, status=403)
 
-        # Serialize data
+        # Serialize response
         data = []
-        for emp in employees:
+        for emp_map in emp_maps:
+            employee = emp_map.employee
             data.append({
-                "id": emp.id,
-                "username": emp.user.username,
-                "email": emp.user.email,
-                "phone_number": emp.phone_number,
-                "company": emp.company.company_name,
-                "job_role": emp.job_role.name
+                "id": employee.id,
+                "username": employee.user.username,
+                "email": employee.user.email,
+                "phone_number": employee.phone_number,
+                "company": emp_map.company.company_name,
+                "job_role": emp_map.job_role.name if emp_map.job_role else None
             })
 
         return Response(data, status=200)
@@ -1684,13 +1732,28 @@ class EmployeeUpdateView(APIView):
     permission_classes = [IsAuthenticated, IsSelfOrOwner]
 
     def put(self, request, employee_id):
-        # 1. Get the employee object (if not soft-deleted)
+        user = request.user
+
+        # 1. Get the employee object
         employee = get_object_or_404(Employee, id=employee_id, deleted=False)
 
-        # 2. Enforce object-level permission
+        # 2. Check object-level permissions
         self.check_object_permissions(request, employee)
 
-        # 3. Proceed with update
+        # 3. Authorization: only allow if user is owner of employee's company or employee themselves
+        if hasattr(user, 'owner_profile'):
+            # Owner: check if employee is mapped to one of their companies
+            companies = user.owner_profile.companies.all()
+            if not EmployeeCompanyMap.objects.filter(employee=employee, company__in=companies, is_active=True).exists():
+                return Response({"error": "Permission denied."}, status=403)
+
+        elif hasattr(user, 'employee') and user.employee != employee:
+            return Response({"error": "You can only update your own profile."}, status=403)
+
+        elif not user.is_superuser and not hasattr(user, 'owner_profile') and not hasattr(user, 'employee'):
+            return Response({"error": "Permission denied."}, status=403)
+
+        # 4. Proceed with update
         data = request.data
         phone_number = data.get("phone_number")
         job_role_id = data.get("job_role")
@@ -1709,11 +1772,31 @@ class EmployeeUpdateView(APIView):
         return Response({"message": "Employee updated successfully."})
 
 class EmployeeDeleteView(APIView):
-    permission_classes = [IsAuthenticated,OwnerOrEmployee]
-    module_name = "employee" 
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employee"  # Assuming you use this for logging or permissions
+
     def delete(self, request, employee_id):
+        user = request.user
+
+        # 1. Get the employee object
         employee = get_object_or_404(Employee, id=employee_id, deleted=False)
+
+        # 2. Check object-level permissions
+        self.check_object_permissions(request, employee)
+
+        # 3. Authorization: only allow if owner of company or the employee themself
+        if hasattr(user, 'owner_profile'):
+            companies = user.owner_profile.companies.all()
+            if not EmployeeCompanyMap.objects.filter(employee=employee, company__in=companies, is_active=True).exists():
+                return Response({"error": "Permission denied."}, status=403)
+
+        elif hasattr(user, 'employee') and user.employee != employee:
+            return Response({"error": "You can only delete your own profile."}, status=403)
+
+        elif not user.is_superuser and not hasattr(user, 'owner_profile') and not hasattr(user, 'employee'):
+            return Response({"error": "Permission denied."}, status=403)
+
+        # 4. Perform soft delete
         employee.deleted = True
         employee.save()
         return Response({"message": "Employee soft-deleted successfully."})
-

@@ -122,4 +122,3 @@ class JobRoleDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'permissions']
         
 
-    
