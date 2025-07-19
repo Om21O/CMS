@@ -3,75 +3,107 @@ from rest_framework.permissions import BasePermission
 from rest_framework.permissions import BasePermission
 
 from rest_framework.permissions import BasePermission
-from .models import EmployeeCompanyMap, ModulePermission
+from .models import EmployeeCompanyMap, ModulePermission,Company
 
 class OwnerOrEmployee(BasePermission):
+    """
+    Custom permission class that:
+    - Allows access to owners of the company.
+    - Allows employees only if they have active mapping and proper module permission.
+    Uses company_id from URL parameters.
+    """
+
     def has_permission(self, request, view):
         user = request.user
         if not user.is_authenticated:
             return False
 
+        # Get company_id from URL parameters
+        company_id = view.kwargs.get('company_id')
+        print(f"Permission check - User: {user}, Company ID from URL: {company_id}")
+
+        # Superuser always has access
         if user.is_superuser:
+            print("Superuser granted access")
             return True
 
-        # Get company_id from request (you may modify this to suit your URL kwarg or query param logic)
-        company_id = request.parser_context['kwargs'].get('company_id') or request.query_params.get('company_id')
-        if not company_id:
-            return False
+        module_name = getattr(view, 'module_name', None)
+        is_view_specific = getattr(view, 'is_view_specific', False)
+        print(f"Module name: {module_name}, View specific: {is_view_specific}")
 
-        # Owner logic
+        # Owner access check
         if hasattr(user, 'owner_profile'):
-            # Allow if the company belongs to the owner
-            if user.owner_profile.companies.filter(id=company_id).exists():
+            print("User is an owner")
+            
+            # If no company_id in URL, allow access to owner-only views
+            if company_id is None:
+                print("Owner accessing owner-specific view")
                 return True
-            return False
+                
+            try:
+                # Verify access to specific company
+                company_id_int = int(company_id)
+                has_access = user.owner_profile.companies.filter(id=company_id_int).exists()
+                print(f"Owner access to company {company_id}: {has_access}")
+                return has_access
+            except (ValueError, TypeError):
+                print("Invalid company ID format")
+                return False
 
-        # Employee logic
-        if not hasattr(user, 'employee'):
-            return False
+        # Employee access check
+        if hasattr(user, 'employee'):
+            print("User is an employee")
+            
+            if not company_id:
+                print("Employee denied: No company ID in URL")
+                return False
+                
+            try:
+                company_id_int = int(company_id)
+                print(f"Checking employee access for company {company_id}")
+                
+                emp_map = EmployeeCompanyMap.objects.filter(
+                    employee=user.employee,
+                    company_id=company_id_int,
+                    is_active=True
+                ).first()
 
-        try:
-            emp_map = EmployeeCompanyMap.objects.get(
-                employee__user=user,
-                company__id=company_id,
-                is_active=True
-            )
-        except EmployeeCompanyMap.DoesNotExist:
-            return False
+                if not emp_map:
+                    print("Employee has no active mapping to this company")
+                    return False
 
-        job_role = emp_map.job_role
-        if not job_role:
-            return False
+                # No module_name = just company-level access
+                if not module_name:
+                    print("Employee granted company-level access (no module required)")
+                    return True
 
-        method_to_action = {
-            'GET': 'view',
-            'POST': 'create',
-            'PUT': 'edit',
-            'PATCH': 'edit',
-            'DELETE': 'delete',
-        }
+                print(f"Checking module permissions for: {module_name}")
+                # Check if the job role allows access to the specific module
+                permission = emp_map.job_role.permissions.filter(
+                    module_name=module_name
+                ).first()
 
-        action = method_to_action.get(request.method)
-        if not action:
-            return False
+                if not permission:
+                    print(f"No permission found for module: {module_name}")
+                    return False
 
-        permission = ModulePermission.objects.filter(
-            job_role=job_role,
-            company__id=company_id,
-            module_name=view.module_name
-        ).first()
+                # If view requires specific object permissions
+                if is_view_specific and not permission.can_view_specific:
+                    print(f"Employee lacks 'view_specific' permission for {module_name}")
+                    return False
 
-        if not permission:
-            return False
+                print(f"Employee granted access to module: {module_name}")
+                return True
 
-        if request.method == "POST" and getattr(view, "is_post_as_get", False):
-            return permission.can_get_using_post
+            except (ValueError, TypeError):
+                print("Invalid company ID format")
+                return False
+            except Exception as e:
+                print(f"Employee permission error: {str(e)}")
+                return False
 
-        if request.method == "GET" and getattr(view, "is_view_specific", False):
-            return permission.can_view_specific
-
-        return getattr(permission, f"can_{action}", False)
-
+        print("User has no recognized profile type (not owner, not employee)")
+        return False
 class IsOwner(BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user

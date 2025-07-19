@@ -26,44 +26,44 @@ urlpatterns = [
     path('company/delete/<int:pk>/', DeleteCompanyView.as_view()),
 
     # Client
-    path('client/create/', CreateClientView.as_view()),
-    path('client/list/', ListClientsView.as_view()),
-    path('client/<int:pk>/', RetrieveClientView.as_view()),
-    path('client/update/<int:pk>/', UpdateClientView.as_view()),
-    path('client/delete/<int:pk>/', DeleteClientView.as_view()),
+    path('client/create/<int:company_id>/', CreateClientView.as_view()),
+    path('client/list/<int:company_id>/', ListClientsView.as_view()),
+    path('client/<int:company_id>/<int:pk>/', RetrieveClientView.as_view()),
+    path('client/update/<int:company_id>/<int:pk>/', UpdateClientView.as_view()),
+    path('client/delete/<int:company_id>/<int:pk>/', DeleteClientView.as_view()),
 
     # Item
-    path('item/create/', CreateItemView.as_view()),
-    path('item/list/', ListItemsView.as_view()),
-    path('item/<int:pk>/', RetrieveItemView.as_view()),
-    path('item/update/<int:pk>/', UpdateItemView.as_view()),
-    path('item/delete/<int:pk>/', DeleteItemView.as_view()),
+    path('items/create/<int:company_id>/', CreateItemView.as_view(), name='create-item'),
+    path('item/list/<int:company_id>/', ListItemsView.as_view()),
+    path('item/<int:company_id>/<int:pk>/', RetrieveItemView.as_view()),
+    path('item/update/<int:company_id>/<int:pk>/', UpdateItemView.as_view()),
+    path('item/delete/<int:company_id>/<int:pk>/', DeleteItemView.as_view()),
 
     # Invoice
     # Sales Invoice URLs
-    path('sales-invoice/create/', CreateSalesInvoiceView.as_view(), name='create_sales_invoice'),
-    path('sales-invoice/list/', ListSalesInvoiceView.as_view(), name='list_sales_invoice'),
-    path('sales-invoice/delete/<int:pk>/', SoftDeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
-    path('sales-invoice/update/<int:pk>/', UpdateSalesInvoiceView.as_view(), name='update_sales_invoice'),
-    path('sales-invoice/<int:pk>/', RetrieveSalesInvoiceView.as_view(), name='retrieve_sales_invoice'),
+    path('sales-invoice/create/<int:company_id>/', CreateSalesInvoiceView.as_view(), name='create_sales_invoice'),
+    path('sales-invoice/list/<int:company_id>/', ListSalesInvoiceView.as_view(), name='list_sales_invoice'),
+    path('sales-invoice/delete/<int:pk>/<int:company_id>/', SoftDeleteSalesInvoiceView.as_view(), name='delete_sales_invoice'),
+    path('sales-invoice/update/<int:company_id>/<int:pk>/', UpdateSalesInvoiceView.as_view(), name='update_sales_invoice'),
+    path('sales-invoice/<int:company_id>/<int:pk>/', RetrieveSalesInvoiceView.as_view(), name='retrieve_sales_invoice'),
 
     # Purchase Invoice URLs
-    path('purchase-invoice/create/', CreatePurchaseInvoiceView.as_view(), name='create_purchase_invoice'),
-    path('purchase-invoice/list/', ListPurchaseInvoiceView.as_view(), name='list_purchase_invoice'),
-    path('purchase-invoice/delete/<int:pk>/', DeletePurchaseInvoiceView.as_view(), name='delete_purchase_invoice'),
-    path('purchase-invoice/update/<int:pk>/',UpdatePurchaseInvoiceView.as_view(), name='update_purchase_invoice'),
-    path('purchase-invoice/<int:pk>/', RetrievePurchaseInvoiceView.as_view(), name='retrieve_purchase_invoice'),
+    path('purchase-invoice/create/<int:company_id>/', CreatePurchaseInvoiceView.as_view(), name='create_purchase_invoice'),
+    path('purchase-invoice/list/<int:company_id>/', ListPurchaseInvoiceView.as_view(), name='list_purchase_invoice'),
+    path('purchase-invoice/delete/<int:company_id>/<int:pk>/', DeletePurchaseInvoiceView.as_view(), name='delete_purchase_invoice'),
+    path('purchase-invoice/update/<int:company_id>/<int:pk>/',UpdatePurchaseInvoiceView.as_view(), name='update_purchase_invoice'),
+    path('purchase-invoice/<int:company_id>/<int:pk>/', RetrievePurchaseInvoiceView.as_view(), name='retrieve_purchase_invoice'),
     # Paymentin and url
-    path('payment-in/create/', PaymentInView.as_view(), name='create_payment_in'),
-    path('payment-out/create/', PaymentOutView.as_view(), name='create_payment_in'),
+    path('payment-in/create/<int:company_id>/', PaymentInView.as_view(), name='create_payment_in'),
+    path('payment-out/create/<int:company_id>/', PaymentOutView.as_view(), name='create_payment_in'),
 
-    path('export-invoice-report/', InvoiceReportExportView.as_view()),
+    path('export-invoice-report/<int:company_id>/', InvoiceReportExportView.as_view()),
 
-    path('jobrole/create/', CreateJobRoleWithPermissionsView.as_view()),
-    path('jobrole/list/', JobRoleListView.as_view()),
-    path('jobrole/<int:job_role_id>/', JobRoleDetailView.as_view()),
-    path('jobrole/update/<int:job_role_id>/', JobRoleUpdateView.as_view()),
-    path('jobrole/delete/<int:job_role_id>/', JobRoleDeleteView.as_view()),
+    path('jobrole/create/<int:company_id>/', CreateJobRoleWithPermissionsView.as_view()),
+    path('jobrole/list/<int:company_id>/', JobRoleListView.as_view()),
+    path('jobrole/<int:company_id>/<int:job_role_id>/', JobRoleDetailView.as_view()),
+    path('jobrole/update/<int:company_id>/<int:job_role_id>/', JobRoleUpdateView.as_view()),
+    path('jobrole/delete/<int:company_id>/<int:job_role_id>/', JobRoleDeleteView.as_view()),
 
     path('employee/create/', CreateEmployeeView.as_view()),
     path("employee/", EmployeeListView.as_view(), name="employee-list"),

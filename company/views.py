@@ -40,8 +40,8 @@ from django.contrib.auth.password_validation import validate_password
 
 
 class LoginView(APIView):
-    
-    permission_classes = [AllowAny]  # Allow any user to access this view
+    permission_classes = [AllowAny]
+
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
@@ -49,10 +49,16 @@ class LoginView(APIView):
         if not username or not password:
             return Response({"error": "Username and password are required", "status": 400})
 
-        user = authenticate( username=username, password=password)
+        user = authenticate(username=username, password=password)
 
         if user is not None:
             user_role = "owner" if hasattr(user, 'owner') else "user"
+
+            # ✅ Enforce check: If Owner exists, ensure they have at least one company
+            if user_role == "owner":
+                owner = user.owner
+                if not owner.company_set.exists():  # or replace with your relation field
+                    return Response({"error": "Owner has no associated company", "status": 403})
 
             refresh = RefreshToken.for_user(user)
             return Response({
@@ -62,8 +68,8 @@ class LoginView(APIView):
                 "user_role": user_role,
                 "status": 200
             })
-        else:
-            return Response({"error": "Invalid credentials", "status": 400})
+
+        return Response({"error": "Invalid credentials", "status": 400})
 
 
 
@@ -467,15 +473,11 @@ class DeleteClientView(APIView):
 class CreateItemView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
-    def post(self, request):
-        # 🐞 DEBUG START
-        print(f"[DEBUG] Logged in user: {request.user}")
-        print(f"[DEBUG] Is superuser: {request.user.is_superuser}")
-        print(f"[DEBUG] Has employee: {hasattr(request.user, 'employee')}")
-        if hasattr(request.user, 'employee'):
-            print(f"[DEBUG] Employee job role: {request.user.employee.job_role}")
-    def post(self, request):
+    
+    def post(self, request,company_id):
+
         data = request.data
+
         company_id = data.get('company_id')
         item_name = data.get('item_name')
         item_code = data.get('item_code')
@@ -571,7 +573,7 @@ class ListItemsView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
-    def get(self, request):
+    def get(self, request,company_id):
         items = Item.objects.filter(deleted=False)
         serializer = ItemSerializer(items, many=True)
         return Response(serializer.data, status=200)
@@ -581,17 +583,17 @@ class RetrieveItemView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
     is_view_specific = True 
-    def get(self, request, pk):
-        item = get_object_or_404(Item, pk=pk,deleted=False)
+    def get(self, request,company_id, pk):
+        item = get_object_or_404(Item,pk=pk,deleted=False)
         serializer = ItemSerializer(item)
         return Response(serializer.data, status=200)
 
 class UpdateItemView(APIView):
     permission_classes=[IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
-    def put(self, request, pk):
+    def put(self, request, company_id,pk):
         try:
-            item = Item.objects.get(pk=pk, deleted=False)
+            item = Item.objects.get(pk=pk,deleted=False)
         except Item.DoesNotExist:
             return Response({"status": 404, "message": "Item not found"})
 
@@ -605,8 +607,8 @@ class DeleteItemView(APIView):
    # permission_classes = [AllowAny]
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "item"
-    def delete(self, request, pk):
-        item = get_object_or_404(Item, pk=pk)
+    def delete(self, request,company_id,pk):
+        item = get_object_or_404(Item,pk=pk)
         item.delete()
         return Response({"msg": "Item deleted", "status": 200})
 
@@ -626,7 +628,7 @@ class DeleteItemView(APIView):
 class CreateSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
-    def post(self, request):
+    def post(self, request,company_id):
         serializer = SalesInvoiceSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -711,8 +713,8 @@ class ListSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
 
-    def get(self, request):
-        invoices = SalesInvoice.objects.filter(deleted=False)
+    def get(self, request,company_id):
+        invoices = SalesInvoice.objects.filter(company_id=company_id,deleted=False)
         serializer = SalesInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -720,9 +722,9 @@ class SoftDeleteSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
 
-    def delete(self, request, pk):
+    def delete(self, request,company_id, pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk, company_id=company_id,deleted=False)
             items = invoice.items.all()
 
             for item_entry in items:
@@ -741,9 +743,11 @@ class SoftDeleteSalesInvoiceView(APIView):
 class RetrieveSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
-    def get(self, request, pk):
+    module_name = "item"
+
+    def get(self, request, company_id,pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk, company_id=company_id,deleted=False)
             serializer = SalesInvoiceSerializer(invoice)
             return Response(serializer.data, status=200)
         except SalesInvoice.DoesNotExist:
@@ -753,9 +757,9 @@ class UpdateSalesInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="sales-invoice"
 
-    def put(self, request, pk):
+    def put(self, request, company_id,pk):
         try:
-            invoice = SalesInvoice.objects.get(pk=pk, deleted=False)
+            invoice = SalesInvoice.objects.get(pk=pk, company_id=company_id,deleted=False)
         except SalesInvoice.DoesNotExist:
             return Response({"error": "Sales invoice not found"}, status=404)
 
@@ -835,7 +839,7 @@ class CreatePurchaseInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="purchase-invoice"
 
-    def post(self, request):
+    def post(self, request,company_id):
         data = request.data
         company_id = data.get('company')
         supplier_name = data.get('supplier_name')
@@ -960,9 +964,9 @@ class UpdatePurchaseInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="purchase-invoice"
 
-    def put(self, request, pk):
+    def put(self, request, company_id,pk):
         try:
-            invoice = PurchaseInvoice.objects.get(pk=pk, deleted=False)
+            invoice = PurchaseInvoice.objects.get(pk=pk, company_id=company_id,deleted=False)
         except PurchaseInvoice.DoesNotExist:
             return Response({"error": "Purchase invoice not found"}, status=404)
 
@@ -1082,8 +1086,8 @@ class ListPurchaseInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="purchase-invoice"
 
-    def get(self, request):
-        invoices = PurchaseInvoice.objects.filter(deleted=False)
+    def get(self, request,company_id):
+        invoices = PurchaseInvoice.objects.filter(company_id=company_id,deleted=False)
         serializer = PurchaseInvoiceSerializer(invoices, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1091,9 +1095,9 @@ class DeletePurchaseInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="purchase-invoice"
 
-    def delete(self, request, pk):
+    def delete(self, request,company_id, pk):
         try:
-            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
+            invoice = PurchaseInvoice.objects.get(pk=pk,company_id=company_id,deleted=False)
             items = invoice.items.all()
 
             for pi_item in items:
@@ -1120,9 +1124,9 @@ class RetrievePurchaseInvoiceView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="purchase-invoice"
 
-    def get(self, request, pk):
+    def get(self, request, company_id,pk):
         try:
-            invoice = PurchaseInvoice.objects.get(pk=pk,deleted=False)
+            invoice = PurchaseInvoice.objects.get(pk=pk,company_id=company_id,deleted=False)
             serializer = PurchaseInvoiceSerializer(invoice)
             return Response(serializer.data, status=200)
         except PurchaseInvoice.DoesNotExist:
@@ -1147,7 +1151,7 @@ class RetrievePurchaseInvoiceView(APIView):
 class PaymentInView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="payment"
-    def post(self, request):
+    def post(self, request,company_id):
         data = request.data
         amount = float(data.get('amount'))
         invoice_ids = data.get('invoice_ids', [])
@@ -1222,7 +1226,7 @@ class PaymentInView(APIView):
 class PaymentOutView(APIView):
     permission_classes = [IsAuthenticated,OwnerOrEmployee]
     module_name ="payment"
-    def post(self, request):
+    def post(self, request,company_id):
         data = request.data
         amount = float(data.get('amount'))
         invoice_ids = data.get('invoice_ids', [])
@@ -1243,7 +1247,7 @@ class PaymentOutView(APIView):
         with transaction.atomic():
             for invoice_id in invoice_ids:
                 try:
-                    invoice = PurchaseInvoice.objects.select_for_update().get(id=invoice_id)
+                    invoice = PurchaseInvoice.objects.select_for_update().get(company_id=company_id,id=invoice_id)
                 except PurchaseInvoice.DoesNotExist:
                     continue
 
@@ -1300,7 +1304,7 @@ class InvoiceReportExportView(APIView):
     module_name ="excel"
     is_post_as_get=True
 
-    def post(self, request):
+    def post(self, request,company_id):
         company_id = request.data.get('company_id')
         invoice_type = request.data.get('invoice_type')  # "sales" or "purchase"
         payment_status = request.data.get('payment_status')  # Optional
@@ -1405,7 +1409,7 @@ class CreateJobRoleWithPermissionsView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "jobrole"
 
-    def post(self, request):
+    def post(self, request,company_id):
         data = request.data.copy()
         permissions = data.pop('permissions', [])
 
@@ -1471,8 +1475,8 @@ class CreateJobRoleWithPermissionsView(APIView):
 class JobRoleListView(APIView):
     permission_classes=[IsAuthenticated,OwnerOrEmployee]
     module_name ="jobrole"
-    def get(self, request):
-        job_roles = JobRole.objects.filter(is_deleted=False)
+    def get(self,request,company_id):
+        job_roles = JobRole.objects.filter(company_id=company_id,is_deleted=False)
         serializer = JobRoleDetailSerializer(job_roles, many=True)
         return Response(serializer.data)
 
@@ -1480,12 +1484,20 @@ class JobRoleDetailView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "jobrole"
 
-    def get(self, request, job_role_id):
-        job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
+    def get(self, request,company_id, job_role_id):
+        try:
+            job_role = JobRole.objects.get(id=job_role_id,company_id=company_id, is_deleted=False)
+        except JobRole.DoesNotExist:
+            return Response({"error": "Job role not found"}, status=404)
 
-        # Ensure same company
-        if job_role.company.id != request.user.employee_master.company.id:
-            return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+        if hasattr(request.user, 'owner_profile'):
+            company_ids = request.user.owner_profile.companies.values_list("id", flat=True)
+            if job_role.company.id not in company_ids:
+                return Response({"error": "Unauthorized access to job role"}, status=403)
+        else:
+            employee = Employee.objects.get(user=request.user, is_deleted=False)
+            if job_role.company.id != employee.company.id:
+                return Response({"error": "Unauthorized access to job role"}, status=403)
 
         serializer = JobRoleDetailSerializer(job_role)
         return Response(serializer.data)
@@ -1495,13 +1507,19 @@ class JobRoleUpdateView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "jobrole"
 
-    def put(self, request, job_role_id):
+    def put(self, request,company_id, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
 
-        # Ensure same company
-        if job_role.company.id != request.user.employee_master.company.id:
-            return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+        # Company access check for owner or employee
+        if hasattr(request.user, 'owner_profile'):
+            owner_company_ids = request.user.owner_profile.companies.values_list('id', flat=True)
+            if job_role.company.id not in owner_company_ids:
+                return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            if job_role.company.id != request.user.employee_master.company.id:
+                return Response({"error": "Access denied: Not your company."}, status=status.HTTP_403_FORBIDDEN)
 
+        # Proceed with update
         data = request.data
 
         new_name = data.get("name")
@@ -1518,8 +1536,10 @@ class JobRoleUpdateView(APIView):
         if permissions_data is None:
             return Response({"error": "Permissions are required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Clear existing permissions
         ModulePermission.objects.filter(job_role=job_role).delete()
 
+        # Create new permissions
         for perm in permissions_data:
             module_name = perm.get("module_name")
             if not module_name:
@@ -1531,6 +1551,7 @@ class JobRoleUpdateView(APIView):
 
             ModulePermission.objects.create(
                 job_role=job_role,
+                company=job_role.company,  # ✅ Required to avoid IntegrityError
                 module_name=internal_name,
                 can_view=perm.get("can_view", False),
                 can_create=perm.get("can_create", False),
@@ -1541,11 +1562,12 @@ class JobRoleUpdateView(APIView):
             )
 
         return Response({"message": "Job role updated successfully."}, status=status.HTTP_200_OK)
+
 class JobRoleDeleteView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
     module_name = "jobrole"
 
-    def delete(self, request, job_role_id):
+    def delete(self, request,company_id, job_role_id):
         job_role = get_object_or_404(JobRole, id=job_role_id, is_deleted=False)
 
         # Ensure same company
@@ -1603,11 +1625,12 @@ class CreateEmployeeView(APIView):
 
         # Create the user and employee
         user = User.objects.create_user(username=username, email=email, password=password)
-        employee = Employee.objects.create(user=user, phone_number=phone_number)
+        employee = Employee.objects.create(user=user, phone_number=phone_number,company=company,job_role=job_role)
 
         # Map to company and job role
         EmployeeCompanyMap.objects.create(
             employee=employee,
+            
             company=company,
             job_role=job_role,
             is_active=True

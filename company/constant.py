@@ -1,15 +1,16 @@
 ALIAS_TO_MODULE_MAP = {
-    "sales-invoice",
-    "purchase-invoice",
-    "expense",
-    "item",
-    "client",
-    "payment",
-    "export-invoice-report",
-    "journal-voucher",
-    "ledger",
-    "company",
-    "owner",
-    "jobrole"
-    "excel"
+     "sales-invoice":"sales-invoice",
+    "purchase-invoice":"purchase-invoice",
+    "expense":"expense",
+    "item":"item",
+    
+    "client":"client",
+    "payment":"payment",
+    "export-invoice-report":"export-invoice-report",
+    "journal-voucher":"journal-voucher",
+    "ledger":"ledger",
+    "company":"company",
+    "owner":"owner",
+    "jobrole":"jobrole",
+    "excel":"excel"
 }
