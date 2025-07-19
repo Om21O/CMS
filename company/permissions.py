@@ -51,11 +51,7 @@ class OwnerOrEmployee(BasePermission):
                 return False
 
         # Employee access check
-        emp_map = EmployeeCompanyMap.objects.filter(
-        employee=user.employee,
-        company_id=company_id_int,  # Specific to the URL company
-        is_active=True).first()
-        if hasattr(user, 'employee'):
+        if hasattr(user, 'employee'):  # This if block must contain all employee logic
             print("User is an employee")
             
             if not company_id:
@@ -66,6 +62,7 @@ class OwnerOrEmployee(BasePermission):
                 company_id_int = int(company_id)
                 print(f"Checking employee access for company {company_id}")
                 
+                # CORRECTLY PLACED inside employee try block
                 emp_map = EmployeeCompanyMap.objects.filter(
                     employee=user.employee,
                     company_id=company_id_int,

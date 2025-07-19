@@ -1728,7 +1728,7 @@ class EmployeeDetailView(APIView):
             "phone_number": employee.phone_number,
             "mappings": [
                 {
-                    "mapping_id": mapping.id,
+                    #"mapping_id": mapping.id,
                     "company_id": mapping.company.id,
                     "company_name": mapping.company.company_name,
                     "job_role_id": mapping.job_role.id,
