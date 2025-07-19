@@ -238,7 +238,7 @@ class CashLedger(models.Model):
 
     def __str__(self):
         return f"{self.date} - {self.transaction_type} - {self.amount}"
-    
+
 class JobRole(models.Model):
     name = models.CharField(max_length=100)
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="job_roles")
@@ -272,13 +272,12 @@ class ModulePermission(models.Model):
 class Employee(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="employee")
     phone_number = models.CharField(max_length=10, validators=[ValidatePhoneNumber()])
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employee",null=True,blank=True)
-    job_role = models.ForeignKey(JobRole, on_delete=models.SET_NULL, null=True, blank=True)
     deleted = models.BooleanField(default=False)
 
     def __str__(self):
         return self.user.username
     
+
 class EmployeeCompanyMap(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="company_links")
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employee_links")
@@ -286,7 +285,8 @@ class EmployeeCompanyMap(models.Model):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        unique_together = ('employee', 'company')  # ✅ Prevents duplicate company assignment
+        unique_together = ('employee', 'company', 'job_role')
 
     def __str__(self):
         return f"{self.employee} in {self.company.company_name} as {self.job_role.name}"
+    

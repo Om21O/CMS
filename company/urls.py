@@ -66,9 +66,11 @@ urlpatterns = [
     path('jobrole/delete/<int:company_id>/<int:job_role_id>/', JobRoleDeleteView.as_view()),
 
     path('employee/create/', CreateEmployeeView.as_view()),
-    path("employee/", EmployeeListView.as_view(), name="employee-list"),
-    path('employee/<int:employee_id>/', EmployeeDetailView.as_view()),
-    path('employee/update/<int:employee_id>/', EmployeeUpdateView.as_view()),
-    path('employee/delete/<int:employee_id>/', EmployeeDeleteView.as_view()),
+     path('employee/<int:employee_id>/add-companies/',AddEmployeeToCompanyView.as_view(), name='add-employee-companies'),
+     path('employee/', EmployeeListView.as_view(), name='employee-list'),
+    path('employee/<int:employee_id>/', EmployeeDetailView.as_view(), name='employee-detail'),
+    path('employee/<int:employee_id>/update/', EmployeeUpdateView.as_view(), name='employee-update'),
+    path('employee/<int:employee_id>/delete/', EmployeeDeleteView.as_view(), name='employee-delete'),
+    path('mappings/<int:mapping_id>/remove/', RemoveEmployeeRoleView.as_view(), name='remove-employee-role'),
     
 ]

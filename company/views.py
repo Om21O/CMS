@@ -1588,238 +1588,268 @@ class JobRoleDeleteView(APIView):
 
 class CreateEmployeeView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employees"
 
     def post(self, request):
         data = request.data
-
         username = data.get('username')
         email = data.get('email')
         password = data.get('password')
         phone_number = data.get('phone_number')
-        company_id = data.get('company')
-        job_role_id = data.get('job_role')
+        company_mappings = data.get('company_mappings', [])  # List of {company_id, job_role_id}
 
-        if not all([username, email, password, phone_number, company_id, job_role_id]):
-            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate required fields
+        if not all([username, email, password, phone_number]) or not company_mappings:
+            return Response({"error": "All fields and at least one company mapping required"}, status=400)
 
+        # Validate password
         try:
             validate_password(password)
         except ValidationError as e:
-            return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": e.messages}, status=400)
 
+        # Check existing user
         if User.objects.filter(username=username).exists():
-            return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response({"error": "Username exists"}, status=400)
         if User.objects.filter(email=email).exists():
-            return Response({"error": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Email exists"}, status=400)
 
-        try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
-            return Response({"error": "Invalid company ID."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            job_role = JobRole.objects.get(id=job_role_id)
-        except JobRole.DoesNotExist:
-            return Response({"error": "Invalid job role ID."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Create the user and employee
+        # Create user and employee
         user = User.objects.create_user(username=username, email=email, password=password)
-        employee = Employee.objects.create(user=user, phone_number=phone_number,company=company,job_role=job_role)
+        employee = Employee.objects.create(user=user, phone_number=phone_number)
 
-        # Map to company and job role
-        EmployeeCompanyMap.objects.create(
-            employee=employee,
+        # Create company mappings
+        created_mappings = []
+        for mapping in company_mappings:
+            company_id = mapping.get('company_id')
+            job_role_id = mapping.get('job_role_id')
             
-            company=company,
-            job_role=job_role,
-            is_active=True
-        )
+            if not company_id or not job_role_id:
+                continue
+                
+            try:
+                company = Company.objects.get(id=company_id)
+                job_role = JobRole.objects.get(id=job_role_id, company=company)
+                
+                # Create mapping
+                EmployeeCompanyMap.objects.create(
+                    employee=employee,
+                    company=company,
+                    job_role=job_role,
+                    is_active=True
+                )
+                created_mappings.append({
+                    "company": company.company_name,
+                    "job_role": job_role.name
+                })
+                
+            except (Company.DoesNotExist, JobRole.DoesNotExist):
+                # Skip invalid mappings
+                continue
 
         return Response({
-            "message": "Employee created and mapped successfully.",
+            "message": "Employee created with company mappings",
             "employee_id": employee.id,
             "username": user.username,
-            "email": user.email,
-            "company": company.company_name,  # Make sure to match actual field in your model
-            "job_role": job_role.name
-        }, status=status.HTTP_201_CREATED)
+            "company_mappings": created_mappings
+        }, status=201)
+class AddEmployeeToCompanyView(APIView):
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employees"
 
+    def post(self, request, employee_id):
+        data = request.data
+        company_mappings = data.get('company_mappings', [])  # List of {company_id, job_role_id}
+
+        if not company_mappings:
+            return Response({"error": "At least one company mapping required"}, status=400)
+
+        try:
+            employee = Employee.objects.get(id=employee_id)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=404)
+
+        # Create new mappings
+        created_mappings = []
+        for mapping in company_mappings:
+            company_id = mapping.get('company_id')
+            job_role_id = mapping.get('job_role_id')
+            
+            if not company_id or not job_role_id:
+                continue
+                
+            try:
+                company = Company.objects.get(id=company_id)
+                job_role = JobRole.objects.get(id=job_role_id, company=company)
+                
+                # Create new mapping
+                EmployeeCompanyMap.objects.create(
+                    employee=employee,
+                    company=company,
+                    job_role=job_role,
+                    is_active=True
+                )
+                created_mappings.append({
+                    "company": company.company_name,
+                    "job_role": job_role.name
+                })
+                
+            except (Company.DoesNotExist, JobRole.DoesNotExist):
+                # Skip invalid mappings
+                continue
+
+        return Response({
+            "message": "Employee added to new companies",
+            "employee_id": employee.id,
+            "added_mappings": created_mappings
+        }, status=201)
+    
 
 class EmployeeDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
 
     def get(self, request, employee_id):
-        user = request.user
-
-        # 1. Get the employee object
         try:
             employee = Employee.objects.get(id=employee_id, deleted=False)
         except Employee.DoesNotExist:
             return Response({"error": "Employee not found."}, status=404)
 
-        # 2. Owner Access
-        if hasattr(user, 'owner_profile'):
-            # Get all companies owned by this owner
-            companies = user.owner_profile.companies.all()
+        # Get all active mappings for this employee
+        mappings = EmployeeCompanyMap.objects.filter(
+            employee=employee,
+            is_active=True
+        ).select_related('company', 'job_role')
 
-            # Check if this employee is mapped to any of the owner's companies
-            if not EmployeeCompanyMap.objects.filter(
-                employee=employee,
-                company__in=companies,
-                is_active=True
-            ).exists():
-                return Response({"error": "Permission denied."}, status=403)
-
-        # 3. Superuser Access
-        elif user.is_superuser:
-            pass  # allow
-
-        # 4. Employee Access
-        elif hasattr(user, 'employee'):
-            if employee.user != user:
-                return Response({"error": "Permission denied."}, status=403)
-
-        # 5. Other roles
-        else:
-            return Response({"error": "Permission denied."}, status=403)
-
-        # 6. Fetch employee-company map (assumes one active map per employee)
-        emp_map = EmployeeCompanyMap.objects.filter(employee=employee, is_active=True).first()
-        company_name = emp_map.company.company_name if emp_map else None
-        job_role = emp_map.job_role.name if emp_map and emp_map.job_role else None
-
-        # 7. Return employee details
+        # Serialize employee details
         data = {
             "id": employee.id,
             "username": employee.user.username,
             "email": employee.user.email,
             "phone_number": employee.phone_number,
-            "company": company_name,
-            "job_role": job_role
+            "mappings": [
+                {
+                    "mapping_id": mapping.id,
+                    "company_id": mapping.company.id,
+                    "company_name": mapping.company.company_name,
+                    "job_role_id": mapping.job_role.id,
+                    "job_role_name": mapping.job_role.name
+                }
+                for mapping in mappings
+            ]
         }
 
         return Response(data, status=200)
-
-
 class EmployeeListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employees"
 
     def get(self, request):
-        user = request.user
-
-        # Owner can see all employees under their companies
-        if hasattr(user, 'owner_profile'):
-            companies = user.owner_profile.companies.all()
-
-            # Fetch all employee-company maps under these companies
-            emp_maps = EmployeeCompanyMap.objects.filter(
+        # Owners see all employees in their companies
+        if hasattr(request.user, 'owner_profile'):
+            companies = request.user.owner_profile.companies.all()
+            mappings = EmployeeCompanyMap.objects.filter(
                 company__in=companies,
                 is_active=True,
                 employee__deleted=False
             ).select_related('employee', 'company', 'job_role', 'employee__user')
-
-        # Superuser can see all active employees
-        elif user.is_superuser:
-            emp_maps = EmployeeCompanyMap.objects.filter(
+        
+        # Superusers see all employees
+        elif request.user.is_superuser:
+            mappings = EmployeeCompanyMap.objects.filter(
                 is_active=True,
                 employee__deleted=False
             ).select_related('employee', 'company', 'job_role', 'employee__user')
-
-        # Employee can only see themselves
-        elif hasattr(user, 'employee'):
-            emp_maps = EmployeeCompanyMap.objects.filter(
-                employee=user.employee,
+        
+        # Employees see only themselves
+        elif hasattr(request.user, 'employee'):
+            mappings = EmployeeCompanyMap.objects.filter(
+                employee=request.user.employee,
                 is_active=True
             ).select_related('employee', 'company', 'job_role', 'employee__user')
-
+        
         else:
             return Response({"error": "Permission denied."}, status=403)
 
-        # Serialize response
-        data = []
-        for emp_map in emp_maps:
-            employee = emp_map.employee
-            data.append({
-                "id": employee.id,
-                "username": employee.user.username,
-                "email": employee.user.email,
-                "phone_number": employee.phone_number,
-                "company": emp_map.company.company_name,
-                "job_role": emp_map.job_role.name if emp_map.job_role else None
+        # Group by employee
+        employees = {}
+        for mapping in mappings:
+            emp = mapping.employee
+            if emp.id not in employees:
+                employees[emp.id] = {
+                    "id": emp.id,
+                    "username": emp.user.username,
+                    "email": emp.user.email,
+                    "phone_number": emp.phone_number,
+                    "mappings": []
+                }
+            
+            employees[emp.id]["mappings"].append({
+                #"mapping_id": mapping.id,
+                "company_id": mapping.company.id,
+                "company_name": mapping.company.company_name,
+                "job_role_id": mapping.job_role.id,
+                "job_role_name": mapping.job_role.name
             })
 
-        return Response(data, status=200)
-
+        return Response(list(employees.values()), status=200)
 class EmployeeUpdateView(APIView):
-    permission_classes = [IsAuthenticated, IsSelfOrOwner]
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employees"
 
     def put(self, request, employee_id):
-        user = request.user
-
-        # 1. Get the employee object
-        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
-
-        # 2. Check object-level permissions
-        self.check_object_permissions(request, employee)
-
-        # 3. Authorization: only allow if user is owner of employee's company or employee themselves
-        if hasattr(user, 'owner_profile'):
-            # Owner: check if employee is mapped to one of their companies
-            companies = user.owner_profile.companies.all()
-            if not EmployeeCompanyMap.objects.filter(employee=employee, company__in=companies, is_active=True).exists():
-                return Response({"error": "Permission denied."}, status=403)
-
-        elif hasattr(user, 'employee') and user.employee != employee:
-            return Response({"error": "You can only update your own profile."}, status=403)
-
-        elif not user.is_superuser and not hasattr(user, 'owner_profile') and not hasattr(user, 'employee'):
-            return Response({"error": "Permission denied."}, status=403)
-
-        # 4. Proceed with update
+        try:
+            employee = Employee.objects.get(id=employee_id, deleted=False)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found."}, status=404)
+        
         data = request.data
-        phone_number = data.get("phone_number")
-        job_role_id = data.get("job_role")
-
-        if phone_number:
-            employee.phone_number = phone_number
-
-        if job_role_id:
+        
+        # Update basic info
+        if 'phone_number' in data:
+            employee.phone_number = data['phone_number']
+            employee.save()
+        
+        # Update specific mapping (e.g., change job role in a company)
+        if 'mapping_id' in data and 'job_role_id' in data:
             try:
-                job_role = JobRole.objects.get(id=job_role_id)
-                employee.job_role = job_role
-            except JobRole.DoesNotExist:
-                return Response({"error": "Invalid job role ID."}, status=status.HTTP_400_BAD_REQUEST)
-
-        employee.save()
-        return Response({"message": "Employee updated successfully."})
-
+                mapping = EmployeeCompanyMap.objects.get(
+                    id=data['mapping_id'],
+                    employee=employee
+                )
+                mapping.job_role = JobRole.objects.get(id=data['job_role_id'])
+                mapping.save()
+            except (EmployeeCompanyMap.DoesNotExist, JobRole.DoesNotExist):
+                return Response({"error": "Invalid mapping or job role"}, status=400)
+        
+        return Response({"message": "Employee updated successfully"})
 class EmployeeDeleteView(APIView):
     permission_classes = [IsAuthenticated, OwnerOrEmployee]
-    module_name = "employee"  # Assuming you use this for logging or permissions
+    module_name = "employees"
 
     def delete(self, request, employee_id):
-        user = request.user
-
-        # 1. Get the employee object
-        employee = get_object_or_404(Employee, id=employee_id, deleted=False)
-
-        # 2. Check object-level permissions
-        self.check_object_permissions(request, employee)
-
-        # 3. Authorization: only allow if owner of company or the employee themself
-        if hasattr(user, 'owner_profile'):
-            companies = user.owner_profile.companies.all()
-            if not EmployeeCompanyMap.objects.filter(employee=employee, company__in=companies, is_active=True).exists():
-                return Response({"error": "Permission denied."}, status=403)
-
-        elif hasattr(user, 'employee') and user.employee != employee:
-            return Response({"error": "You can only delete your own profile."}, status=403)
-
-        elif not user.is_superuser and not hasattr(user, 'owner_profile') and not hasattr(user, 'employee'):
-            return Response({"error": "Permission denied."}, status=403)
-
-        # 4. Perform soft delete
+        try:
+            employee = Employee.objects.get(id=employee_id, deleted=False)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found."}, status=404)
+        
+        # Soft delete employee and deactivate all mappings
         employee.deleted = True
         employee.save()
-        return Response({"message": "Employee soft-deleted successfully."})
+        
+        EmployeeCompanyMap.objects.filter(employee=employee).update(is_active=False)
+        
+        return Response({"message": "Employee deleted successfully"})
+
+class RemoveEmployeeRoleView(APIView):
+    permission_classes = [IsAuthenticated, OwnerOrEmployee]
+    module_name = "employees"
+
+    def delete(self, request, mapping_id):
+        try:
+            mapping = EmployeeCompanyMap.objects.get(id=mapping_id)
+            mapping.is_active = False
+            mapping.save()
+            return Response({"message": "Employee removed from company/role"})
+            
+        except EmployeeCompanyMap.DoesNotExist:
+            return Response({"error": "Mapping not found"}, status=404)

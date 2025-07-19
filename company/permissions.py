@@ -3,7 +3,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.permissions import BasePermission
 
 from rest_framework.permissions import BasePermission
-from .models import EmployeeCompanyMap, ModulePermission,Company
+from .models import EmployeeCompanyMap, ModulePermission,Company,Employee
 
 class OwnerOrEmployee(BasePermission):
     """
@@ -51,6 +51,10 @@ class OwnerOrEmployee(BasePermission):
                 return False
 
         # Employee access check
+        emp_map = EmployeeCompanyMap.objects.filter(
+        employee=user.employee,
+        company_id=company_id_int,  # Specific to the URL company
+        is_active=True).first()
         if hasattr(user, 'employee'):
             print("User is an employee")
             
@@ -107,45 +111,54 @@ class OwnerOrEmployee(BasePermission):
 class IsOwner(BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user
-        is_superuser = user.is_superuser
-
-        # Get the employee's company from EmployeeCompanyMap
-        try:
-            emp_company = EmployeeCompanyMap.objects.get(employee=obj, is_active=True).company
-        except EmployeeCompanyMap.DoesNotExist:
-            return False  # If mapping not found, deny permission
-
-        # Check if user is owner of that company
-        is_owner = hasattr(user, 'owner_profile') and emp_company in user.owner_profile.companies.all()
-        return is_owner or is_superuser
+        if user.is_superuser:
+            return True
+            
+        if hasattr(user, 'owner_profile'):
+            # Check if object belongs to any of the owner's companies
+            if isinstance(obj, Company):
+                return obj in user.owner_profile.companies.all()
+                
+            if hasattr(obj, 'company'):
+                return obj.company in user.owner_profile.companies.all()
+                
+            # For employee objects
+            if isinstance(obj,  Employee):
+                return EmployeeCompanyMap.objects.filter(
+                    employee=obj,
+                    company__in=user.owner_profile.companies.all()
+                ).exists()
+                
+        return False
 
 
 
 class IsSelfOrOwner(BasePermission):
-    """
-    Allows access if:
-    - The user is the employee being viewed (self)
-    - The user is a superuser
-    - The user is an owner and the employee belongs to one of their companies
-    """
-
     def has_object_permission(self, request, view, obj):
         user = request.user
-
-        # Superuser has full access
+        
         if user.is_superuser:
             return True
-
-        # Owner: check if employee is part of their companies
+            
+        # Employee accessing their own data
+        if hasattr(user, 'employee') and user.employee == obj:
+            return True
+            
+        # Owner accessing data in their companies
         if hasattr(user, 'owner_profile'):
-            try:
-                emp_company = EmployeeCompanyMap.objects.get(employee=obj, is_active=True).company
-                return emp_company in user.owner_profile.companies.all()
-            except EmployeeCompanyMap.DoesNotExist:
-                return False
-
-        # Employee can access their own data
-        if hasattr(user, 'employee'):
-            return obj.user == user
-
+            # For company objects
+            if isinstance(obj, Company):
+                return obj in user.owner_profile.companies.all()
+                
+            # For employee objects
+            if isinstance(obj, Employee):
+                return EmployeeCompanyMap.objects.filter(
+                    employee=obj,
+                    company__in=user.owner_profile.companies.all()
+                ).exists()
+                
+            # For other models (items, invoices, etc.)
+            if hasattr(obj, 'company'):
+                return obj.company in user.owner_profile.companies.all()
+                
         return False
